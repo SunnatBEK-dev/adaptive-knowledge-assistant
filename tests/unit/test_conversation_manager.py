@@ -7,6 +7,7 @@ from ai_sdk.memory.model import (
     LongTermMemory,
     MemorySearchResult,
 )
+from ai_sdk.tools import ToolExecutor, ToolRegistry
 
 
 class FakeClient:
@@ -33,6 +34,31 @@ class FakeClient:
             yield chunk
         if self.error:
             raise self.error
+
+
+class FakeToolClient(FakeClient):
+    def __init__(self, response="Tool-assisted response", error=None):
+        super().__init__(response=response, error=error)
+        self.tool_request = None
+
+    def ask(self, messages):
+        raise AssertionError("Plain ask must not be used with tools.")
+
+    def ask_with_tools(
+        self,
+        messages,
+        executor,
+        *,
+        max_tool_rounds,
+    ):
+        self.tool_request = (
+            messages,
+            executor,
+            max_tool_rounds,
+        )
+        if self.error:
+            raise self.error
+        return self.response
 
 
 class FakeRepository:
@@ -88,6 +114,8 @@ def build_manager(
     client=None,
     repository=None,
     memory_store=None,
+    tool_executor=None,
+    max_tool_rounds=8,
 ):
     conversation = Conversation()
     client = client or FakeClient()
@@ -98,6 +126,8 @@ def build_manager(
         client=client,
         repository=repository,
         memory_store=memory_store,
+        tool_executor=tool_executor,
+        max_tool_rounds=max_tool_rounds,
     )
     return manager, conversation, client, repository
 
@@ -258,3 +288,79 @@ def test_manager_rejects_unconfigured_or_invalid_memory():
             repository=FakeRepository(),
             memory_retrieval_k=0,
         )
+
+
+def test_manager_uses_tool_capable_client_and_persists_final_text():
+    executor = ToolExecutor(ToolRegistry())
+    client = FakeToolClient()
+    manager, conversation, _, repository = build_manager(
+        client=client,
+        tool_executor=executor,
+        max_tool_rounds=4,
+    )
+
+    result = manager.send_message("Use a tool")
+
+    assert result == "Tool-assisted response"
+    assert client.tool_request == (
+        [{"role": "user", "content": "Use a tool"}],
+        executor,
+        4,
+    )
+    assert [message.content for message in conversation.history()] == [
+        "Use a tool",
+        "Tool-assisted response",
+    ]
+    assert len(repository.saved) == 1
+
+
+def test_manager_rolls_back_when_tool_client_fails():
+    manager, conversation, _, repository = build_manager(
+        client=FakeToolClient(
+            error=RuntimeError("tool loop failed")
+        ),
+        tool_executor=ToolExecutor(ToolRegistry()),
+    )
+
+    with pytest.raises(RuntimeError, match="tool loop failed"):
+        manager.send_message("Use a tool")
+
+    assert conversation.is_empty()
+    assert repository.saved == []
+
+
+def test_manager_rejects_tools_for_non_tool_client():
+    manager, conversation, _, repository = build_manager(
+        client=FakeClient(),
+        tool_executor=ToolExecutor(ToolRegistry()),
+    )
+
+    with pytest.raises(RuntimeError, match="does not support tools"):
+        manager.send_message("Use a tool")
+
+    assert conversation.is_empty()
+    assert repository.saved == []
+
+
+def test_manager_rejects_streaming_when_tools_are_configured():
+    manager, conversation, _, repository = build_manager(
+        client=FakeToolClient(),
+        tool_executor=ToolExecutor(ToolRegistry()),
+    )
+
+    with pytest.raises(RuntimeError, match="streaming"):
+        list(manager.stream_message("Use a tool"))
+
+    assert conversation.is_empty()
+    assert repository.saved == []
+
+
+@pytest.mark.parametrize("max_tool_rounds", [0, -1, True, 1.5])
+def test_manager_rejects_invalid_tool_round_limit(max_tool_rounds):
+    with pytest.raises(ValueError, match="greater than zero"):
+        build_manager(max_tool_rounds=max_tool_rounds)
+
+
+def test_manager_rejects_invalid_tool_executor():
+    with pytest.raises(TypeError, match="ToolExecutor"):
+        build_manager(tool_executor=object())

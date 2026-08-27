@@ -18,6 +18,7 @@ from ai_sdk.retrieval.retriever import (
     SemanticRetriever,
 )
 from ai_sdk.storage.base import ConversationRepository
+from ai_sdk.tools.executor import ToolExecutor
 
 
 class RAGConversationManager(ConversationManager):
@@ -34,6 +35,8 @@ class RAGConversationManager(ConversationManager):
         retrieval_k: int = 3,
         memory_store: BaseMemoryStore | None = None,
         memory_retrieval_k: int = 3,
+        tool_executor: ToolExecutor | None = None,
+        max_tool_rounds: int = 8,
     ) -> None:
         if retrieval_k <= 0:
             raise ValueError(
@@ -47,6 +50,8 @@ class RAGConversationManager(ConversationManager):
             repository=repository,
             memory_store=memory_store,
             memory_retrieval_k=memory_retrieval_k,
+            tool_executor=tool_executor,
+            max_tool_rounds=max_tool_rounds,
         )
         self.chunker = chunker
         self.retriever = retriever

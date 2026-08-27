@@ -10,6 +10,7 @@ from ai_sdk.memory.model import (
     MemorySearchResult,
 )
 from ai_sdk.storage.base import ConversationRepository
+from ai_sdk.tools.executor import ToolExecutor
 
 
 class ConversationManager:
@@ -22,10 +23,29 @@ class ConversationManager:
         repository: ConversationRepository,
         memory_store: BaseMemoryStore | None = None,
         memory_retrieval_k: int = 3,
+        tool_executor: ToolExecutor | None = None,
+        max_tool_rounds: int = 8,
     ) -> None:
         if memory_retrieval_k <= 0:
             raise ValueError(
                 "Memory retrieval top-k must be greater than zero."
+            )
+
+        if (
+            not isinstance(max_tool_rounds, int)
+            or isinstance(max_tool_rounds, bool)
+            or max_tool_rounds <= 0
+        ):
+            raise ValueError(
+                "Maximum tool rounds must be greater than zero."
+            )
+
+        if (
+            tool_executor is not None
+            and not isinstance(tool_executor, ToolExecutor)
+        ):
+            raise TypeError(
+                "Tool executor must be a ToolExecutor."
             )
 
         self.conversation = conversation
@@ -34,6 +54,8 @@ class ConversationManager:
         self.repository = repository
         self.memory_store = memory_store
         self.memory_retrieval_k = memory_retrieval_k
+        self.tool_executor = tool_executor
+        self.max_tool_rounds = max_tool_rounds
 
     def _build_messages(
         self,
@@ -89,6 +111,30 @@ class ConversationManager:
 
         return self.memory_store
 
+    def _ask(
+        self,
+        messages: list[LLMMessage],
+    ) -> str:
+        if self.tool_executor is None:
+            return self.client.ask(messages)
+
+        ask_with_tools = getattr(
+            self.client,
+            "ask_with_tools",
+            None,
+        )
+
+        if not callable(ask_with_tools):
+            raise RuntimeError(
+                "Configured LLM client does not support tools."
+            )
+
+        return ask_with_tools(
+            messages,
+            self.tool_executor,
+            max_tool_rounds=self.max_tool_rounds,
+        )
+
     def send_message(
         self,
         text: str,
@@ -101,9 +147,7 @@ class ConversationManager:
         try:
             messages = self._build_messages(text)
 
-            response = self.client.ask(
-                messages
-            )
+            response = self._ask(messages)
 
             assistant_message = (
                 self.conversation.add_assistant(
@@ -133,6 +177,12 @@ class ConversationManager:
         self,
         text: str,
     ) -> Iterator[str]:
+        if self.tool_executor is not None:
+            raise RuntimeError(
+                "Tool-enabled streaming is not supported. "
+                "Use send_message instead."
+            )
+
         user_message = (
             self.conversation.add_user(text)
         )

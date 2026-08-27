@@ -6,7 +6,7 @@ and small abstractions over framework-specific magic.
 
 ## Current status
 
-The application architecture foundation is complete through Tool Calling phase 5.1:
+The application architecture foundation is complete through Tool Calling phase 5.2:
 
 - conversation and message domain models;
 - JSON repository abstraction;
@@ -18,6 +18,9 @@ The application architecture foundation is complete through Tool Calling phase 5
 - provider-neutral tool schemas with JSON Schema export;
 - strict tool argument validation and allow-listed execution;
 - structured tool calls and serialized success/error results;
+- Claude tool-use request/response translation;
+- bounded multi-round tool execution with duplicate-call protection;
+- optional tool-enabled conversation and RAG orchestration;
 - Anthropic/Claude adapter behind an LLM contract;
 - provider-neutral embedding-client contract;
 - lazy SentenceTransformer embedding adapter;
@@ -55,9 +58,10 @@ to the model. Recent excluded turns are compressed into a bounded local memory
 block without another API call. Directory-backed indexes also remain
 synchronized across application restarts without embedding unchanged files
 again. User-approved durable facts are stored separately and only relevant
-matches are added to a new prompt. The SDK also has an offline-tested tool
-foundation that validates every call before dispatching only explicitly
-registered Python handlers.
+matches are added to a new prompt. The SDK also has an offline-tested tool loop
+that sends registered schemas to Claude, validates every requested call,
+dispatches only explicitly registered Python handlers, and returns structured
+results until Claude produces a final answer.
 
 ## Architecture
 
@@ -70,6 +74,8 @@ RAGConversationManager
     |                    |-- TokenCounter -> RegexTokenCounter
     |                    `-- ExtractiveConversationSummarizer
     |-- BaseLLMClient -> ClaudeClient
+    |                    |-- ToolRegistry -> Claude tool schemas
+    |                    `-- tool_use -> ToolExecutor -> tool_result
     |-- BaseEmbeddingClient -> SentenceTransformerEmbeddingClient
     |-- HybridRetriever -> semantic search + BM25 + rank fusion
     |                       `-- BaseVectorStore
@@ -174,7 +180,15 @@ The tool layer supports string, integer, number, and boolean parameters,
 required and optional arguments, deterministic JSON Schema export, duplicate
 registration protection, strict unknown-argument rejection, and contained
 handler errors. It does not use dynamic imports, `eval`, or shell execution.
-Claude tool-use blocks are not connected to the application loop yet.
+When a `ToolExecutor` is configured on `ConversationManager` or
+`RAGConversationManager`, Claude may request one or more registered tools in a
+round. Results, including contained validation and execution errors, are sent
+back until Claude returns final text. The loop defaults to at most eight tool
+rounds and rejects duplicate call IDs. Tool traces are transient; persisted
+conversation history contains the original user message and final assistant
+answer. Tool-enabled streaming is intentionally unsupported for now, so use
+`send_message()` for this workflow. The SDK does not register application
+tools automatically—the host application owns that allow-list.
 
 The default ingestion layer supports UTF-8 `.txt`, `.md`, `.markdown`, and
 `.rst` files. Directory synchronization scans recursively in deterministic
@@ -221,7 +235,8 @@ RUN_ANTHROPIC_INTEGRATION=1 \
 
 ## Next chapter
 
-The next Tool Calling phase is provider integration: translate schemas to the
-Claude request format, parse tool-use blocks into provider-neutral `ToolCall`
-objects, execute them, and return `ToolResult` blocks until the model produces
-a final text response.
+The next Agents phase will move loop policy out of the Claude adapter into a
+provider-neutral agent runtime with explicit state, iteration events, and
+termination reasons. That creates the foundation for planning, reflection,
+and later multi-agent coordination without coupling those concepts to one
+model provider.

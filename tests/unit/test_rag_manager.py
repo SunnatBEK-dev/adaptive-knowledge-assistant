@@ -9,6 +9,7 @@ from ai_sdk.retrieval.chunk import Chunk
 from ai_sdk.retrieval.catalog import IndexedDocument
 from ai_sdk.retrieval.document import Document
 from ai_sdk.retrieval.search import SearchResult
+from ai_sdk.tools import ToolExecutor, ToolRegistry
 
 
 class FakeClient:
@@ -22,6 +23,23 @@ class FakeClient:
     def stream(self, messages):
         self.received_messages = messages
         yield "Grounded answer"
+
+
+class FakeToolClient(FakeClient):
+    def __init__(self):
+        super().__init__()
+        self.tool_request = None
+
+    def ask_with_tools(
+        self,
+        messages,
+        executor,
+        *,
+        max_tool_rounds,
+    ):
+        self.received_messages = messages
+        self.tool_request = (executor, max_tool_rounds)
+        return "Tool-grounded answer"
 
 
 class FakeRepository:
@@ -110,9 +128,11 @@ def build_manager(
     retriever=None,
     chunker=None,
     retrieval_k=2,
+    client=None,
+    tool_executor=None,
 ):
     conversation = Conversation()
-    client = FakeClient()
+    client = client or FakeClient()
     repository = FakeRepository()
     chunker = chunker or FakeChunker([make_chunk()])
     retriever = retriever or FakeRetriever([
@@ -126,6 +146,7 @@ def build_manager(
         chunker=chunker,
         retriever=retriever,
         retrieval_k=retrieval_k,
+        tool_executor=tool_executor,
     )
     return (
         manager,
@@ -278,3 +299,22 @@ def test_retrieval_failure_rolls_back_user_message():
 def test_rag_manager_rejects_non_positive_top_k():
     with pytest.raises(ValueError, match="greater than zero"):
         build_manager(retrieval_k=0)
+
+
+def test_rag_manager_combines_retrieval_context_and_tools():
+    client = FakeToolClient()
+    executor = ToolExecutor(ToolRegistry())
+    manager, _, _, repository, _, retriever = build_manager(
+        client=client,
+        tool_executor=executor,
+    )
+
+    response = manager.send_message("Tool question")
+
+    assert response == "Tool-grounded answer"
+    assert retriever.queries == [("Tool question", 2)]
+    assert "Retrieved knowledge" in (
+        client.received_messages[-1]["content"]
+    )
+    assert client.tool_request == (executor, 8)
+    assert len(repository.saved) == 1
