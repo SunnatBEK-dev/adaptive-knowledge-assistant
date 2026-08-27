@@ -1,0 +1,15 @@
+.venv/
+.env
+.env.*
+!.env.example
+.idea/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+.coverage
+htmlcov/
+build/
+dist/
+data/*.json
+!data/.gitkeep

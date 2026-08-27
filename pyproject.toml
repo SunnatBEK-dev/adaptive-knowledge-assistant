@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-sdk"
+version = "0.1.0"
+description = "A provider-neutral AI application SDK built from first principles"
+requires-python = ">=3.10"
+dependencies = [
+    "anthropic>=0.120,<1",
+    "python-dotenv>=1.2,<2",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=9,<10",
+    "pytest-cov>=7,<8",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["-ra", "-m", "not integration"]
+strict_markers = true
+markers = [
+    "integration: exercises multiple real project components",
+    "external: may call a paid external service when explicitly enabled",
+]
