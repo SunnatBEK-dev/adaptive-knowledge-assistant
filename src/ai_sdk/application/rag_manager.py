@@ -1,0 +1,64 @@
+from ai_sdk.application.conversation_manager import (
+    ConversationManager,
+)
+from ai_sdk.context.prompt_builder import PromptBuilder
+from ai_sdk.core.conversation import Conversation
+from ai_sdk.llm.base import BaseLLMClient
+from ai_sdk.llm.types import LLMMessage
+from ai_sdk.retrieval.chunk import Chunk
+from ai_sdk.retrieval.chunker import TextChunker
+from ai_sdk.retrieval.document import Document
+from ai_sdk.retrieval.retriever import (
+    SemanticRetriever,
+)
+from ai_sdk.storage.base import ConversationRepository
+
+
+class RAGConversationManager(ConversationManager):
+    """Conversation workflow augmented with document retrieval."""
+
+    def __init__(
+        self,
+        conversation: Conversation,
+        prompt_builder: PromptBuilder,
+        client: BaseLLMClient,
+        repository: ConversationRepository,
+        chunker: TextChunker,
+        retriever: SemanticRetriever,
+        retrieval_k: int = 3,
+    ) -> None:
+        if retrieval_k <= 0:
+            raise ValueError(
+                "Retrieval top-k must be greater than zero."
+            )
+
+        super().__init__(
+            conversation=conversation,
+            prompt_builder=prompt_builder,
+            client=client,
+            repository=repository,
+        )
+        self.chunker = chunker
+        self.retriever = retriever
+        self.retrieval_k = retrieval_k
+
+    def index_document(
+        self,
+        document: Document,
+    ) -> list[Chunk]:
+        chunks = self.chunker.split(document)
+        self.retriever.index(chunks)
+        return chunks
+
+    def _build_messages(
+        self,
+        text: str,
+    ) -> list[LLMMessage]:
+        retrieval_results = self.retriever.retrieve(
+            query=text,
+            k=self.retrieval_k,
+        )
+
+        return self.prompt_builder.build_messages(
+            retrieval_results=retrieval_results
+        )

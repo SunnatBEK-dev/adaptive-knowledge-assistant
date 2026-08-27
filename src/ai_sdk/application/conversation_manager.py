@@ -3,6 +3,7 @@ from collections.abc import Iterator
 from ai_sdk.core.conversation import Conversation
 from ai_sdk.context.prompt_builder import PromptBuilder
 from ai_sdk.llm.base import BaseLLMClient
+from ai_sdk.llm.types import LLMMessage
 from ai_sdk.storage.base import ConversationRepository
 
 
@@ -20,6 +21,12 @@ class ConversationManager:
         self.client = client
         self.repository = repository
 
+    def _build_messages(
+        self,
+        text: str,
+    ) -> list[LLMMessage]:
+        return self.prompt_builder.build_messages()
+
     def send_message(
         self,
         text: str,
@@ -30,9 +37,7 @@ class ConversationManager:
         assistant_message = None
 
         try:
-            messages = (
-                self.prompt_builder.build_messages()
-            )
+            messages = self._build_messages(text)
 
             response = self.client.ask(
                 messages
@@ -74,9 +79,7 @@ class ConversationManager:
         assistant_message = None
 
         try:
-            messages = (
-                self.prompt_builder.build_messages()
-            )
+            messages = self._build_messages(text)
 
             for chunk in self.client.stream(
                 messages

@@ -20,19 +20,20 @@ The application architecture foundation is complete through phase 3.12:
 - provider-neutral VectorStore with an in-memory implementation;
 - SemanticRetriever orchestration for indexing and search;
 - retrieval-aware PromptBuilder without domain-state mutation;
+- RAGConversationManager for indexing, retrieval, generation, and persistence;
 - conversation orchestration with rollback behavior;
 - embedding cache persistence;
 - isolated unit tests and opt-in integration tests.
 
-Retrieval and RAG are intentionally the next chapter, not part of the current
-foundation.
+The project now has a complete offline-tested RAG pipeline. Retrieval quality
+evaluation and production persistence are the next concerns.
 
 ## Architecture
 
 ```text
 app/main.py
     |
-ConversationManager
+ConversationManager / RAGConversationManager
     |-- Conversation / Message
     |-- PromptBuilder -> LLMMessage
     |-- BaseLLMClient -> ClaudeClient
@@ -121,5 +122,5 @@ RUN_ANTHROPIC_INTEGRATION=1 \
 
 The planned Retrieval/RAG sequence continues with:
 
-1. RAG orchestration;
-2. retrieval quality evaluation.
+1. retrieval quality evaluation;
+2. production retrieval persistence.
