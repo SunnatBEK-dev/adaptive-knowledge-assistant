@@ -1,6 +1,7 @@
 from collections.abc import Sequence
 
 from ai_sdk.core.conversation import Conversation
+from ai_sdk.context.summary import ConversationSummarizer
 from ai_sdk.context.window import SlidingContextWindow
 from ai_sdk.llm.types import LLMMessage
 from ai_sdk.retrieval.search import SearchResult
@@ -12,9 +13,16 @@ class PromptBuilder:
         self,
         conversation: Conversation,
         context_window: SlidingContextWindow | None = None,
+        summary_memory: ConversationSummarizer | None = None,
     ) -> None:
+        if summary_memory is not None and context_window is None:
+            raise ValueError(
+                "Summary memory requires a context window."
+            )
+
         self.conversation = conversation
         self.context_window = context_window
+        self.summary_memory = summary_memory
 
     def build_messages(
         self,
@@ -37,7 +45,24 @@ class PromptBuilder:
             )
 
         if self.context_window is not None:
-            messages = self.context_window.select(messages)
+            selection = self.context_window.partition(
+                messages
+            )
+            messages = selection.included
+
+            if (
+                self.summary_memory is not None
+                and selection.excluded
+            ):
+                summary = self.summary_memory.summarize(
+                    selection.excluded
+                )
+
+                if summary:
+                    self._augment_latest_user_with_summary(
+                        messages,
+                        summary,
+                    )
 
         return messages
 
@@ -74,4 +99,27 @@ class PromptBuilder:
 
         raise RuntimeError(
             "Retrieval context requires a user message."
+        )
+
+    @staticmethod
+    def _augment_latest_user_with_summary(
+        messages: list[LLMMessage],
+        summary: str,
+    ) -> None:
+        for message in reversed(messages):
+            if message["role"] != "user":
+                continue
+
+            current_prompt = message["content"]
+            message["content"] = (
+                "Conversation memory from older turns "
+                "(extractive and possibly incomplete):\n"
+                f"{summary}\n\n"
+                "Current prompt:\n"
+                f"{current_prompt}"
+            )
+            return
+
+        raise RuntimeError(
+            "Summary memory requires a user message."
         )

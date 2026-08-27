@@ -35,6 +35,21 @@ def test_window_keeps_newest_complete_turns_in_order():
     ]
 
 
+def test_window_partition_reports_excluded_messages():
+    messages = [
+        {"role": "user", "content": "old question"},
+        {"role": "assistant", "content": "old answer"},
+        {"role": "user", "content": "latest"},
+    ]
+    selection = SlidingContextWindow(
+        max_tokens=1,
+        message_overhead=0,
+    ).partition(messages)
+
+    assert selection.included == [messages[-1]]
+    assert selection.excluded == messages[:2]
+
+
 def test_window_always_keeps_latest_turn_when_it_exceeds_budget():
     messages = [
         {"role": "user", "content": "old"},

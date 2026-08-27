@@ -4,6 +4,9 @@ from ai_sdk.application.conversation_manager import (
     ConversationManager,
 )
 from ai_sdk.context.prompt_builder import PromptBuilder
+from ai_sdk.context.summary import (
+    ExtractiveConversationSummarizer,
+)
 from ai_sdk.context.window import SlidingContextWindow
 from ai_sdk.core.conversation import Conversation
 from ai_sdk.storage.json import JsonConversationRepository
@@ -44,6 +47,9 @@ def test_context_window_limits_prompt_but_preserves_full_history(
                 max_tokens=2,
                 message_overhead=0,
             ),
+            summary_memory=ExtractiveConversationSummarizer(
+                max_tokens=8
+            ),
         ),
         client=client,
         repository=repository,
@@ -53,10 +59,12 @@ def test_context_window_limits_prompt_but_preserves_full_history(
     restored = repository.load()
 
     assert response == "Latest answer"
-    assert client.received_messages == [{
-        "role": "user",
-        "content": "Latest question",
-    }]
+    assert len(client.received_messages) == 1
+    prompt = client.received_messages[0]["content"]
+    assert "User: Recent question" in prompt
+    assert "Assistant: Recent answer" in prompt
+    assert "Latest question" in prompt
+    assert "Old question" not in prompt
     assert [
         message.content
         for message in restored.history()

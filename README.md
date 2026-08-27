@@ -6,13 +6,14 @@ and small abstractions over framework-specific magic.
 
 ## Current status
 
-The application architecture foundation is complete through Memory phase 4.1:
+The application architecture foundation is complete through Memory phase 4.2:
 
 - conversation and message domain models;
 - JSON repository abstraction;
 - provider-neutral prompt construction;
 - provider-neutral token counting with a deterministic local estimator;
 - turn-aware sliding context windows with a configurable token budget;
+- bounded extractive summary memory for turns outside the active window;
 - Anthropic/Claude adapter behind an LLM contract;
 - provider-neutral embedding-client contract;
 - lazy SentenceTransformer embedding adapter;
@@ -45,9 +46,11 @@ loader-based ingestion layer. Normal RAG queries combine semantic similarity
 with exact lexical evidence. The evaluation layer can compare this hybrid
 candidate against a semantic baseline and explicitly report improvements or
 regressions. Long conversations retain their full persisted history while only
-the newest complete turns within the configured token budget are sent to the
-model. Directory-backed indexes also remain synchronized across application
-restarts without embedding unchanged files again.
+the newest complete turns within the configured token budget are sent directly
+to the model. Recent excluded turns are compressed into a bounded local memory
+block without another API call. Directory-backed indexes also remain
+synchronized across application restarts without embedding unchanged files
+again.
 
 ## Architecture
 
@@ -57,7 +60,8 @@ app/main.py
 RAGConversationManager
     |-- Conversation / Message
     |-- PromptBuilder -> SlidingContextWindow -> LLMMessage
-    |                    `-- TokenCounter -> RegexTokenCounter
+    |                    |-- TokenCounter -> RegexTokenCounter
+    |                    `-- ExtractiveConversationSummarizer
     |-- BaseLLMClient -> ClaudeClient
     |-- BaseEmbeddingClient -> SentenceTransformerEmbeddingClient
     |-- HybridRetriever -> semantic search + BM25 + rank fusion
@@ -106,6 +110,7 @@ CHUNK_SIZE=500
 CHUNK_OVERLAP=50
 RETRIEVAL_K=3
 CONTEXT_TOKEN_BUDGET=3000
+CONTEXT_SUMMARY_TOKEN_BUDGET=400
 ```
 
 Never commit `.env`, API keys, or real conversation data.
@@ -137,6 +142,9 @@ configured SentenceTransformer model.
 keeps complete recent user/assistant turns and always retains the newest turn,
 even when that turn alone exceeds the soft budget. `/history` and JSON
 persistence continue to keep the complete conversation.
+`CONTEXT_SUMMARY_TOKEN_BUDGET` limits the deterministic extractive memory made
+from excluded turns. This local summarizer adds no model request, token charge,
+or network latency.
 
 The default ingestion layer supports UTF-8 `.txt`, `.md`, `.markdown`, and
 `.rst` files. Directory synchronization scans recursively in deterministic
@@ -183,6 +191,6 @@ RUN_ANTHROPIC_INTEGRATION=1 \
 
 ## Next chapter
 
-The next Memory Systems phase is summary memory: compress turns that fall
-outside the sliding window so important older context can remain available
-without restoring the entire raw history.
+The next Memory Systems phase is long-term memory: explicitly store durable
+user facts and preferences separately from raw conversation history, then
+retrieve only relevant memories for a new request.

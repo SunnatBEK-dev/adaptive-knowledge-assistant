@@ -1,5 +1,6 @@
 import re
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Protocol
 
 from ai_sdk.llm.types import LLMMessage
@@ -19,6 +20,14 @@ class RegexTokenCounter:
             r"\w+|[^\w\s]",
             text,
         ))
+
+
+@dataclass
+class ContextWindowSelection:
+    """Messages kept in and excluded from the active context."""
+
+    included: list[LLMMessage]
+    excluded: list[LLMMessage]
 
 
 class SlidingContextWindow:
@@ -50,10 +59,19 @@ class SlidingContextWindow:
         self,
         messages: Sequence[LLMMessage],
     ) -> list[LLMMessage]:
+        return self.partition(messages).included
+
+    def partition(
+        self,
+        messages: Sequence[LLMMessage],
+    ) -> ContextWindowSelection:
         turns = self._group_turns(messages)
 
         if not turns:
-            return []
+            return ContextWindowSelection(
+                included=[],
+                excluded=[],
+            )
 
         selected_turns: list[list[LLMMessage]] = []
         used_tokens = 0
@@ -77,12 +95,26 @@ class SlidingContextWindow:
             selected_turns.append(turn)
             used_tokens += turn_tokens
 
+        included_turns = list(reversed(selected_turns))
+        excluded_turns = turns[
+            :len(turns) - len(included_turns)
+        ]
+
+        return ContextWindowSelection(
+            included=self._flatten(included_turns),
+            excluded=self._flatten(excluded_turns),
+        )
+
+    @staticmethod
+    def _flatten(
+        turns: Sequence[Sequence[LLMMessage]],
+    ) -> list[LLMMessage]:
         return [
             {
                 "role": message["role"],
                 "content": message["content"],
             }
-            for turn in reversed(selected_turns)
+            for turn in turns
             for message in turn
         ]
 

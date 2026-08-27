@@ -1,6 +1,9 @@
 import pytest
 
 from ai_sdk.context.prompt_builder import PromptBuilder
+from ai_sdk.context.summary import (
+    ExtractiveConversationSummarizer,
+)
 from ai_sdk.context.window import SlidingContextWindow
 from ai_sdk.core.conversation import Conversation
 from ai_sdk.retrieval.chunk import Chunk
@@ -138,3 +141,39 @@ def test_build_messages_applies_context_window_after_retrieval():
     assert "Current question" in messages[0]["content"]
     assert "Retrieved knowledge" in messages[0]["content"]
     assert "Old question" not in messages[0]["content"]
+
+
+def test_build_messages_injects_summary_of_excluded_turns():
+    conversation = Conversation()
+    conversation.add_user("Old question")
+    conversation.add_assistant("Old answer")
+    conversation.add_user("Current question")
+    builder = PromptBuilder(
+        conversation,
+        context_window=SlidingContextWindow(
+            max_tokens=2,
+            message_overhead=0,
+        ),
+        summary_memory=ExtractiveConversationSummarizer(
+            max_tokens=8
+        ),
+    )
+
+    messages = builder.build_messages()
+
+    assert len(messages) == 1
+    assert "User: Old question" in messages[0]["content"]
+    assert "Assistant: Old answer" in messages[0]["content"]
+    assert "Current question" in messages[0]["content"]
+
+
+def test_summary_memory_requires_context_window():
+    conversation = Conversation()
+
+    with pytest.raises(ValueError, match="context window"):
+        PromptBuilder(
+            conversation,
+            summary_memory=ExtractiveConversationSummarizer(
+                max_tokens=10
+            ),
+        )
