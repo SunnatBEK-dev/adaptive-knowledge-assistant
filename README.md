@@ -17,6 +17,8 @@ The application architecture foundation is complete through phase 3.12:
 - Document and Chunk retrieval domain models;
 - deterministic character-based TextChunker with overlap;
 - dependency-free cosine similarity and deterministic top-k search;
+- provider-neutral VectorStore with an in-memory implementation;
+- SemanticRetriever orchestration for indexing and search;
 - conversation orchestration with rollback behavior;
 - embedding cache persistence;
 - isolated unit tests and opt-in integration tests.
@@ -34,6 +36,7 @@ ConversationManager
     |-- PromptBuilder -> LLMMessage
     |-- BaseLLMClient -> ClaudeClient
     |-- BaseEmbeddingClient -> SentenceTransformerEmbeddingClient
+    |-- SemanticRetriever -> BaseVectorStore -> InMemoryVectorStore
     `-- ConversationRepository -> JsonConversationRepository
 ```
 
@@ -117,6 +120,5 @@ RUN_ANTHROPIC_INTEGRATION=1 \
 
 The planned Retrieval/RAG sequence continues with:
 
-1. vector-store and retriever contracts;
-2. retrieval-aware prompt construction;
-3. RAG orchestration and evaluation.
+1. retrieval-aware prompt construction;
+2. RAG orchestration and evaluation.
