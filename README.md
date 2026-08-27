@@ -6,7 +6,7 @@ and small abstractions over framework-specific magic.
 
 ## Current status
 
-The application architecture foundation is complete through Memory phase 4.3:
+The application architecture foundation is complete through Tool Calling phase 5.1:
 
 - conversation and message domain models;
 - JSON repository abstraction;
@@ -15,6 +15,9 @@ The application architecture foundation is complete through Memory phase 4.3:
 - turn-aware sliding context windows with a configurable token budget;
 - bounded extractive summary memory for turns outside the active window;
 - explicit persistent long-term memory with lexical relevance retrieval;
+- provider-neutral tool schemas with JSON Schema export;
+- strict tool argument validation and allow-listed execution;
+- structured tool calls and serialized success/error results;
 - Anthropic/Claude adapter behind an LLM contract;
 - provider-neutral embedding-client contract;
 - lazy SentenceTransformer embedding adapter;
@@ -52,7 +55,9 @@ to the model. Recent excluded turns are compressed into a bounded local memory
 block without another API call. Directory-backed indexes also remain
 synchronized across application restarts without embedding unchanged files
 again. User-approved durable facts are stored separately and only relevant
-matches are added to a new prompt.
+matches are added to a new prompt. The SDK also has an offline-tested tool
+foundation that validates every call before dispatching only explicitly
+registered Python handlers.
 
 ## Architecture
 
@@ -74,6 +79,7 @@ RAGConversationManager
     |-- DirectorySynchronizer -> DocumentIngestor
     |                            `-- BaseDocumentLoader -> TextDocumentLoader
     |-- BaseMemoryStore -> JsonMemoryStore -> BM25 recall
+    |-- ToolRegistry -> ToolExecutor -> ToolResult
     `-- ConversationRepository -> JsonConversationRepository
 ```
 
@@ -164,6 +170,12 @@ lexical retrieval adds only matching memories to later prompts. `/clear`
 removes conversation history but leaves long-term memory intact; use `/forget`
 to delete a stored fact.
 
+The tool layer supports string, integer, number, and boolean parameters,
+required and optional arguments, deterministic JSON Schema export, duplicate
+registration protection, strict unknown-argument rejection, and contained
+handler errors. It does not use dynamic imports, `eval`, or shell execution.
+Claude tool-use blocks are not connected to the application loop yet.
+
 The default ingestion layer supports UTF-8 `.txt`, `.md`, `.markdown`, and
 `.rst` files. Directory synchronization scans recursively in deterministic
 path order, skips unsupported formats, and persists content hashes plus the
@@ -209,7 +221,7 @@ RUN_ANTHROPIC_INTEGRATION=1 \
 
 ## Next chapter
 
-The Memory Systems foundation is now complete: short-term conversation state,
-sliding context, summary memory, persistent long-term memory, and relevant
-memory recall are implemented. The next chapter is Tool Calling, starting with
-provider-neutral tool schemas and strict argument validation.
+The next Tool Calling phase is provider integration: translate schemas to the
+Claude request format, parse tool-use blocks into provider-neutral `ToolCall`
+objects, execute them, and return `ToolResult` blocks until the model produces
+a final text response.
