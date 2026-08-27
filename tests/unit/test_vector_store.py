@@ -132,9 +132,14 @@ def test_store_replaces_and_deletes_document_chunks():
         "chunk_replacement",
         "chunk_other",
     }
+    assert store.document_ids() == [
+        "doc_other",
+        "doc_replace",
+    ]
     assert store.delete_document("doc_replace") == 1
     assert store.delete_document("doc_replace") == 0
     assert store.count() == 1
+    assert store.document_ids() == ["doc_other"]
 
 
 def test_store_rolls_back_invalid_document_replacement():

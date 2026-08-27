@@ -158,6 +158,12 @@ class JsonVectorStore(BaseVectorStore):
 
         return deleted_count
 
+    def document_ids(self) -> list[str]:
+        return sorted({
+            chunk.document_id
+            for chunk, _ in self._items.values()
+        })
+
     def clear(self) -> None:
         previous_items = self._items.copy()
         previous_dimension = self._dimension

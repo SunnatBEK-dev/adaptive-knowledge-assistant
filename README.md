@@ -6,7 +6,7 @@ and small abstractions over framework-specific magic.
 
 ## Current status
 
-The application architecture foundation is complete through phase 3.15:
+The application architecture foundation is complete through phase 3.16:
 
 - conversation and message domain models;
 - JSON repository abstraction;
@@ -23,20 +23,21 @@ The application architecture foundation is complete through phase 3.15:
 - retrieval-aware PromptBuilder without domain-state mutation;
 - RAGConversationManager for indexing, retrieval, generation, and persistence;
 - offline retrieval evaluation with Hit Rate@k, Recall@k, and MRR;
+- RAG-enabled CLI for indexing, listing, and removing text documents;
 - conversation orchestration with rollback behavior;
 - embedding cache persistence;
 - isolated unit tests and opt-in integration tests.
 
-The project now has a complete offline-tested RAG pipeline, deterministic
-retrieval-quality evaluation, restart-safe local vector persistence, and a
-document-level index lifecycle.
+The project now has a complete offline-tested RAG pipeline exposed through the
+CLI, deterministic retrieval-quality evaluation, restart-safe local vector
+persistence, and a document-level index lifecycle.
 
 ## Architecture
 
 ```text
 app/main.py
     |
-ConversationManager / RAGConversationManager
+RAGConversationManager
     |-- Conversation / Message
     |-- PromptBuilder -> LLMMessage
     |-- BaseLLMClient -> ClaudeClient
@@ -60,7 +61,7 @@ python -m venv .venv
 .venv/bin/python -m pip install -e '.[test]'
 ```
 
-Install local SentenceTransformer support only when it is needed:
+Install local SentenceTransformer support before using `/index`:
 
 ```bash
 .venv/bin/python -m pip install -e '.[embeddings]'
@@ -78,6 +79,10 @@ ANTHROPIC_API_KEY=...
 MODEL=...
 MAX_TOKENS=1024
 TIMEOUT=60
+EMBEDDING_MODEL=all-MiniLM-L6-v2
+CHUNK_SIZE=500
+CHUNK_OVERLAP=50
+RETRIEVAL_K=3
 ```
 
 Never commit `.env`, API keys, or real conversation data.
@@ -88,7 +93,18 @@ Never commit `.env`, API keys, or real conversation data.
 .venv/bin/python app/main.py
 ```
 
-Available commands are `/exit`, `/save`, `/clear`, and `/history`.
+RAG document commands are:
+
+```text
+/index /absolute/path/to/guide.txt
+/documents
+/remove doc_123456789abc
+```
+
+Indexing the same path again replaces its old chunks. Normal prompts use the
+most relevant indexed chunks. `/history`, `/save`, `/clear`, `/help`, and
+`/exit` remain available. The first indexing run may download the configured
+SentenceTransformer model.
 
 ## Tests
 
@@ -125,5 +141,5 @@ RUN_ANTHROPIC_INTEGRATION=1 \
 
 ## Next chapter
 
-The next Retrieval/RAG phase is CLI integration: commands for indexing,
-listing, and removing documents, plus RAG-backed chat in `app/main.py`.
+The next Retrieval/RAG phase is source-aware answers: preserve retrieval source
+details and return citations alongside generated responses.

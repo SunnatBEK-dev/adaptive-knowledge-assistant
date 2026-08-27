@@ -135,6 +135,9 @@ def test_retriever_replaces_and_deletes_document_index():
     )
 
     assert store.count() == 1
+    assert retriever.list_documents() == [
+        "doc_retriever"
+    ]
     assert store.search(
         [0.0, 1.0],
         k=1,
@@ -145,6 +148,7 @@ def test_retriever_replaces_and_deletes_document_index():
     assert retriever.delete_document(
         "doc_retriever"
     ) == 0
+    assert retriever.list_documents() == []
 
 
 def test_failed_reindex_preserves_existing_document():

@@ -73,6 +73,9 @@ class SemanticRetriever:
             document_id
         )
 
+    def list_documents(self) -> list[str]:
+        return self.vector_store.document_ids()
+
     def _embed_chunks(
         self,
         chunks: Sequence[Chunk],

@@ -42,6 +42,9 @@ def test_store_round_trip_preserves_chunks_and_searches(tmp_path):
     results = restarted.search([1.0, 0.0], k=1)
 
     assert restarted.count() == 2
+    assert restarted.document_ids() == [
+        "doc_json_store"
+    ]
     assert results[0].chunk.id == "chunk_python"
     assert results[0].chunk.metadata == {
         "source": "qo‘llanma.txt"
@@ -242,6 +245,10 @@ def test_document_replacement_and_deletion_survive_restart(
     restarted = JsonVectorStore(file_path)
 
     assert restarted.count() == 2
+    assert restarted.document_ids() == [
+        "doc_other",
+        "doc_replace",
+    ]
     assert {
         result.chunk.id
         for result in restarted.search(
@@ -260,6 +267,9 @@ def test_document_replacement_and_deletion_survive_restart(
     ) == 0
     final_store = JsonVectorStore(file_path)
     assert final_store.count() == 1
+    assert final_store.document_ids() == [
+        "doc_other"
+    ]
     assert final_store.search(
         [0.0, 1.0],
         k=1,

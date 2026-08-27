@@ -45,9 +45,19 @@ class FakeChunker:
 
 
 class FakeRetriever:
-    def __init__(self, results=None, error=None):
+    def __init__(
+        self,
+        results=None,
+        error=None,
+        documents=None,
+    ):
         self.results = results or []
         self.error = error
+        self.documents = (
+            ["doc_rag"]
+            if documents is None
+            else list(documents)
+        )
         self.indexed = []
         self.deleted_documents = []
         self.queries = []
@@ -61,6 +71,9 @@ class FakeRetriever:
     def delete_document(self, document_id):
         self.deleted_documents.append(document_id)
         return 2
+
+    def list_documents(self):
+        return self.documents.copy()
 
     def retrieve(self, query, k=5):
         self.queries.append((query, k))
@@ -147,6 +160,20 @@ def test_delete_document_delegates_to_retriever():
     assert retriever.deleted_documents == ["doc_rag"]
 
 
+def test_list_documents_delegates_to_retriever():
+    retriever = FakeRetriever(
+        documents=["doc_b", "doc_a"]
+    )
+    manager, _, _, _, _, _ = build_manager(
+        retriever=retriever
+    )
+
+    assert manager.list_documents() == [
+        "doc_b",
+        "doc_a",
+    ]
+
+
 def test_send_message_retrieves_context_before_llm_call():
     manager, conversation, client, repository, _, retriever = (
         build_manager()
@@ -167,6 +194,21 @@ def test_send_message_retrieves_context_before_llm_call():
         for message in conversation.history()
     ] == ["User question", "Grounded answer"]
     assert len(repository.saved) == 1
+
+
+def test_send_message_without_documents_skips_retrieval():
+    retriever = FakeRetriever(documents=[])
+    manager, _, client, _, _, _ = build_manager(
+        retriever=retriever
+    )
+
+    response = manager.send_message("Plain question")
+
+    assert response == "Grounded answer"
+    assert retriever.queries == []
+    assert client.received_messages[-1]["content"] == (
+        "Plain question"
+    )
 
 
 def test_retrieval_failure_rolls_back_user_message():

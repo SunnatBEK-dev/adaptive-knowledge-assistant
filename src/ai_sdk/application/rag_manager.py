@@ -61,10 +61,16 @@ class RAGConversationManager(ConversationManager):
             document_id
         )
 
+    def list_documents(self) -> list[str]:
+        return self.retriever.list_documents()
+
     def _build_messages(
         self,
         text: str,
     ) -> list[LLMMessage]:
+        if not self.list_documents():
+            return self.prompt_builder.build_messages()
+
         retrieval_results = self.retriever.retrieve(
             query=text,
             k=self.retrieval_k,

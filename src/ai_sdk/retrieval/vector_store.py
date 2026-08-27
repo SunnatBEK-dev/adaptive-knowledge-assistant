@@ -57,6 +57,11 @@ class BaseVectorStore(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def document_ids(self) -> list[str]:
+        """Return indexed document IDs in deterministic order."""
+        raise NotImplementedError
+
+    @abstractmethod
     def clear(self) -> None:
         raise NotImplementedError
 

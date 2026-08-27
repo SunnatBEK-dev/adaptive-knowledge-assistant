@@ -117,6 +117,12 @@ class InMemoryVectorStore(BaseVectorStore):
             document_id
         )
 
+    def document_ids(self) -> list[str]:
+        return sorted({
+            chunk.document_id
+            for chunk, _ in self._items.values()
+        })
+
     def clear(self) -> None:
         self._items.clear()
         self._dimension = None
