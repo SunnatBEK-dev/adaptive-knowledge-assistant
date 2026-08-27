@@ -1,3 +1,5 @@
+from hashlib import sha256
+
 import pytest
 
 from ai_sdk.ingestion import (
@@ -22,6 +24,9 @@ def test_text_loader_supports_document_formats(tmp_path):
     assert document.metadata == {
         "source": str(file_path.resolve()),
         "format": "md",
+        "content_hash": sha256(
+            b"# Python guide"
+        ).hexdigest(),
     }
 
 
@@ -57,6 +62,10 @@ def test_ingestor_loads_supported_directory_files_in_order(
         document.content
         for document in documents
     ] == ["Text", "Markdown", "RST"]
+    assert {
+        document.metadata["ingestion_root"]
+        for document in documents
+    } == {str(directory.resolve())}
 
 
 def test_ingestor_can_disable_recursive_directory_scan(
@@ -93,3 +102,15 @@ def test_ingestor_rejects_unsupported_direct_file(tmp_path):
 
     with pytest.raises(ValueError, match="Unsupported"):
         ingestor.ingest(file_path)
+
+
+def test_ingestor_can_allow_empty_directory(tmp_path):
+    directory = tmp_path / "empty"
+    directory.mkdir()
+
+    documents = create_default_ingestor().ingest(
+        directory,
+        allow_empty=True,
+    )
+
+    assert documents == []

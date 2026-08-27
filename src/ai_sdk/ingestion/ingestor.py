@@ -24,6 +24,7 @@ class DocumentIngestor:
         path: str | Path,
         *,
         recursive: bool = True,
+        allow_empty: bool = False,
     ) -> list[Document]:
         input_path = Path(path).expanduser()
 
@@ -56,15 +57,22 @@ class DocumentIngestor:
             key=lambda candidate: str(candidate),
         )
 
-        if not file_paths:
+        if not file_paths and not allow_empty:
             raise ValueError(
                 "No supported document files were found."
             )
 
-        return [
-            self._load_file(file_path)
-            for file_path in file_paths
-        ]
+        ingestion_root = str(input_path.resolve())
+        documents = []
+
+        for file_path in file_paths:
+            document = self._load_file(file_path)
+            document.metadata["ingestion_root"] = (
+                ingestion_root
+            )
+            documents.append(document)
+
+        return documents
 
     def _load_file(self, path: Path) -> Document:
         loader = self._find_loader(path)

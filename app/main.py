@@ -20,6 +20,7 @@ from ai_sdk.embeddings.sentence_transformer import (
 )
 from ai_sdk.ingestion import (
     DocumentIngestor,
+    DirectorySynchronizer,
     TextDocumentLoader,
     create_default_ingestor,
 )
@@ -93,7 +94,7 @@ def print_citations(
 def print_help() -> None:
     print(
         "Commands:\n"
-        "  /index <path>       Index a text file or directory\n"
+        "  /index <path>       Index a file or sync a directory\n"
         "  /documents          Show the document catalog\n"
         "  /remove <document>  Remove a document from the index\n"
         "  /history            Show conversation history\n"
@@ -198,24 +199,28 @@ def run_cli(
                     print("Usage: /index <path>\n")
                     continue
 
-                documents = ingestor.ingest(argument)
-                total_chunks = 0
+                index_path = Path(argument).expanduser()
 
-                for document in documents:
-                    chunks = manager.index_document(
-                        document
-                    )
-                    total_chunks += len(chunks)
+                if index_path.is_dir():
+                    result = DirectorySynchronizer(
+                        ingestor,
+                        manager,
+                    ).sync(index_path)
                     print(
-                        f"Indexed {document.id}: "
-                        f"{len(chunks)} chunks."
+                        f"Synchronized {result.root}: "
+                        f"indexed={len(result.indexed_documents)}, "
+                        f"unchanged={len(result.unchanged_documents)}, "
+                        f"removed={len(result.removed_documents)}, "
+                        f"chunks={result.indexed_chunks}.\n"
                     )
+                    continue
 
-                if len(documents) > 1:
-                    print(
-                        f"Indexed {len(documents)} documents: "
-                        f"{total_chunks} total chunks."
-                    )
+                document = ingestor.ingest(index_path)[0]
+                chunks = manager.index_document(document)
+                print(
+                    f"Indexed {document.id}: "
+                    f"{len(chunks)} chunks."
+                )
 
                 print()
                 continue

@@ -56,6 +56,9 @@ class TextDocumentLoader(BaseDocumentLoader):
         path_digest = sha256(
             str(resolved_path).encode("utf-8")
         ).hexdigest()[:12]
+        content_hash = sha256(
+            content.encode("utf-8")
+        ).hexdigest()
 
         return Document(
             id=f"doc_{path_digest}",
@@ -67,5 +70,6 @@ class TextDocumentLoader(BaseDocumentLoader):
                     .lower()
                     .lstrip(".")
                 ),
+                "content_hash": content_hash,
             },
         )

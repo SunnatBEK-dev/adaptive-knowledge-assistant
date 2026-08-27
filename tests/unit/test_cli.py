@@ -1,3 +1,5 @@
+from hashlib import sha256
+
 import pytest
 
 from app.main import load_document
@@ -24,6 +26,9 @@ def test_load_document_uses_stable_path_identity(tmp_path):
     assert second.metadata == {
         "source": str(file_path.resolve()),
         "format": "txt",
+        "content_hash": sha256(
+            b"Updated Python functions"
+        ).hexdigest(),
     }
 
 

@@ -6,7 +6,7 @@ and small abstractions over framework-specific magic.
 
 ## Current status
 
-The application architecture foundation is complete through phase 3.18:
+The application architecture foundation is complete through phase 3.19:
 
 - conversation and message domain models;
 - JSON repository abstraction;
@@ -27,6 +27,8 @@ The application architecture foundation is complete through phase 3.18:
 - structured RAG responses with deterministic local source citations;
 - document catalog summaries with source paths and chunk counts;
 - loader-based ingestion for text files and recursive directories;
+- content-hash-based incremental directory synchronization;
+- stale indexed-document cleanup when source files disappear;
 - conversation orchestration with rollback behavior;
 - embedding cache persistence;
 - isolated unit tests and opt-in integration tests.
@@ -34,7 +36,8 @@ The application architecture foundation is complete through phase 3.18:
 The project now has a complete offline-tested RAG pipeline exposed through the
 CLI, deterministic retrieval-quality evaluation, restart-safe local vector
 persistence, document-level index lifecycle, source-aware answers, and a
-loader-based ingestion layer.
+loader-based ingestion layer. Directory-backed indexes also remain synchronized
+across application restarts without embedding unchanged files again.
 
 ## Architecture
 
@@ -50,7 +53,8 @@ RAGConversationManager
     |                          |-- InMemoryVectorStore
     |                          `-- JsonVectorStore
     |-- Retrieval results -> Citation / RAGResponse
-    |-- DocumentIngestor -> BaseDocumentLoader -> TextDocumentLoader
+    |-- DirectorySynchronizer -> DocumentIngestor
+    |                            `-- BaseDocumentLoader -> TextDocumentLoader
     `-- ConversationRepository -> JsonConversationRepository
 ```
 
@@ -108,15 +112,18 @@ RAG document commands are:
 /remove doc_123456789abc
 ```
 
-Indexing the same path again replaces its old chunks. Normal prompts use the
-most relevant indexed chunks. `/history`, `/save`, `/clear`, `/help`, and
-`/exit` remain available. The first indexing run may download the configured
-SentenceTransformer model.
+Indexing the same file again replaces its old chunks. Indexing a directory
+performs an incremental synchronization: new and changed files are indexed,
+unchanged files are skipped, and documents whose source files disappeared are
+removed. Normal prompts use the most relevant indexed chunks. `/history`,
+`/save`, `/clear`, `/help`, and `/exit` remain available. The first indexing
+run may download the configured SentenceTransformer model.
 
 The default ingestion layer supports UTF-8 `.txt`, `.md`, `.markdown`, and
-`.rst` files. Directory indexing scans recursively in deterministic path order
-and skips unsupported formats. `/documents` shows each source path and its
-current chunk count.
+`.rst` files. Directory synchronization scans recursively in deterministic
+path order, skips unsupported formats, and persists content hashes plus the
+owning root directory. `/documents` shows each source path and its current
+chunk count.
 
 After each RAG answer, the CLI prints numbered sources with document ID, chunk
 ID, and similarity score. Local source paths are mapped to citations after the
@@ -157,6 +164,6 @@ RUN_ANTHROPIC_INTEGRATION=1 \
 
 ## Next chapter
 
-The next Retrieval/RAG phase is directory synchronization: persist which files
-belong to an indexed directory, re-index changed files, and remove stale
-documents when their source files disappear.
+The next Retrieval/RAG phase is richer ingestion: add an optional PDF loader
+with page-aware source metadata and clear per-file reporting for mixed-format
+directories.

@@ -95,8 +95,11 @@ def test_cli_indexes_directory_uses_catalog_and_removes_document(
     )
     output = capsys.readouterr().out
 
-    assert f"Indexed {document_id}: 1 chunks." in output
-    assert "Indexed 2 documents: 2 total chunks." in output
+    assert f"Synchronized {guide_directory.resolve()}" in output
+    assert (
+        "indexed=2, unchanged=0, removed=0, chunks=2."
+        in output
+    )
     assert f"- {document_id}" in output
     assert "chunks=1" in output
     assert f"source={guide_path.resolve()}" in output

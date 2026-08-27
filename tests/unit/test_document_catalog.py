@@ -12,11 +12,19 @@ def make_chunk(
     document_id,
     index,
     source=None,
+    content_hash=None,
+    ingestion_root=None,
 ):
     metadata = {}
 
     if source is not None:
         metadata["source"] = source
+
+    if content_hash is not None:
+        metadata["content_hash"] = content_hash
+
+    if ingestion_root is not None:
+        metadata["ingestion_root"] = ingestion_root
 
     return Chunk(
         id=chunk_id,
@@ -75,6 +83,29 @@ def test_catalog_uses_document_id_when_source_is_missing():
     assert catalog[0].source == "doc_fallback"
 
 
+def test_catalog_preserves_sync_metadata():
+    catalog = build_document_catalog([
+        make_chunk(
+            "chunk_sync",
+            "doc_sync",
+            0,
+            "/guides/python.txt",
+            "content-digest",
+            "/guides",
+        )
+    ])
+
+    assert catalog == [
+        IndexedDocument(
+            document_id="doc_sync",
+            source="/guides/python.txt",
+            chunk_count=1,
+            content_hash="content-digest",
+            ingestion_root="/guides",
+        )
+    ]
+
+
 @pytest.mark.parametrize(
     ("document_id", "source", "chunk_count", "message"),
     [
@@ -95,3 +126,25 @@ def test_indexed_document_rejects_invalid_data(
             source=source,
             chunk_count=chunk_count,
         )
+
+
+@pytest.mark.parametrize(
+    ("field", "message"),
+    [
+        ("content_hash", "content hash"),
+        ("ingestion_root", "ingestion root"),
+    ],
+)
+def test_indexed_document_rejects_blank_sync_metadata(
+    field,
+    message,
+):
+    values = {
+        "document_id": "doc",
+        "source": "source",
+        "chunk_count": 1,
+        field: "",
+    }
+
+    with pytest.raises(ValueError, match=message):
+        IndexedDocument(**values)
