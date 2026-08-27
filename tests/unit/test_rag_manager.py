@@ -90,6 +90,7 @@ def make_chunk() -> Chunk:
         document_id="doc_rag",
         content="Retrieved knowledge",
         index=0,
+        metadata={"source": "guide.txt"},
     )
 
 
@@ -194,6 +195,28 @@ def test_send_message_retrieves_context_before_llm_call():
         for message in conversation.history()
     ] == ["User question", "Grounded answer"]
     assert len(repository.saved) == 1
+    assert len(manager.last_citations) == 1
+    assert manager.last_citations[0].position == 1
+    assert manager.last_citations[0].source == (
+        "guide.txt"
+    )
+    assert manager.last_citations[0].score == pytest.approx(
+        0.9
+    )
+
+
+def test_send_message_with_citations_returns_structured_response():
+    manager, _, _, _, _, _ = build_manager()
+
+    response = manager.send_message_with_citations(
+        "User question"
+    )
+
+    assert response.content == "Grounded answer"
+    assert response.citations == manager.last_citations
+    assert response.citations[0].chunk_id == (
+        "chunk_context"
+    )
 
 
 def test_send_message_without_documents_skips_retrieval():
@@ -209,6 +232,7 @@ def test_send_message_without_documents_skips_retrieval():
     assert client.received_messages[-1]["content"] == (
         "Plain question"
     )
+    assert manager.last_citations == ()
 
 
 def test_retrieval_failure_rolls_back_user_message():
@@ -225,6 +249,7 @@ def test_retrieval_failure_rolls_back_user_message():
     assert conversation.is_empty()
     assert client.received_messages is None
     assert repository.saved == []
+    assert manager.last_citations == ()
 
 
 def test_rag_manager_rejects_non_positive_top_k():

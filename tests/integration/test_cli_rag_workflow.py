@@ -88,8 +88,16 @@ def test_cli_indexes_uses_lists_and_removes_document(
     assert f"Indexed {document_id}: 1 chunks." in output
     assert f"- {document_id}" in output
     assert "Grounded CLI answer" in output
+    assert "Sources:" in output
+    assert f"[1] {guide_path.resolve()}" in output
     assert f"Removed {document_id}: 1 chunks." in output
     assert "Python functions contain reusable logic." in (
+        client.received_messages[-1]["content"]
+    )
+    assert str(guide_path.resolve()) not in (
+        client.received_messages[-1]["content"]
+    )
+    assert "Cite supporting context with [n]" in (
         client.received_messages[-1]["content"]
     )
     assert vector_store.count() == 0

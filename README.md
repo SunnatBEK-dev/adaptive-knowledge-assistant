@@ -6,7 +6,7 @@ and small abstractions over framework-specific magic.
 
 ## Current status
 
-The application architecture foundation is complete through phase 3.16:
+The application architecture foundation is complete through phase 3.17:
 
 - conversation and message domain models;
 - JSON repository abstraction;
@@ -24,13 +24,14 @@ The application architecture foundation is complete through phase 3.16:
 - RAGConversationManager for indexing, retrieval, generation, and persistence;
 - offline retrieval evaluation with Hit Rate@k, Recall@k, and MRR;
 - RAG-enabled CLI for indexing, listing, and removing text documents;
+- structured RAG responses with deterministic local source citations;
 - conversation orchestration with rollback behavior;
 - embedding cache persistence;
 - isolated unit tests and opt-in integration tests.
 
 The project now has a complete offline-tested RAG pipeline exposed through the
 CLI, deterministic retrieval-quality evaluation, restart-safe local vector
-persistence, and a document-level index lifecycle.
+persistence, document-level index lifecycle, and source-aware answers.
 
 ## Architecture
 
@@ -45,6 +46,7 @@ RAGConversationManager
     |-- SemanticRetriever -> BaseVectorStore
     |                          |-- InMemoryVectorStore
     |                          `-- JsonVectorStore
+    |-- Retrieval results -> Citation / RAGResponse
     `-- ConversationRepository -> JsonConversationRepository
 ```
 
@@ -106,6 +108,10 @@ most relevant indexed chunks. `/history`, `/save`, `/clear`, `/help`, and
 `/exit` remain available. The first indexing run may download the configured
 SentenceTransformer model.
 
+After each RAG answer, the CLI prints numbered sources with document ID, chunk
+ID, and similarity score. Local source paths are mapped to citations after the
+model call and are not included in the Claude prompt.
+
 ## Tests
 
 The default command runs deterministic unit tests only and never calls an
@@ -141,5 +147,6 @@ RUN_ANTHROPIC_INTEGRATION=1 \
 
 ## Next chapter
 
-The next Retrieval/RAG phase is source-aware answers: preserve retrieval source
-details and return citations alongside generated responses.
+The next Retrieval/RAG phase is a document catalog and ingestion layer: show
+source paths and chunk counts, then support directory and additional file
+loaders without putting parsing logic in the CLI.

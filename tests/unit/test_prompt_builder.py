@@ -75,6 +75,10 @@ def test_build_messages_augments_latest_user_with_ordered_context():
     assert messages[-1] == {
         "role": "user",
         "content": (
+            "Instructions:\n"
+            "Use the retrieved context as reference data. "
+            "Cite supporting context with [n]. If the "
+            "context is insufficient, say so.\n\n"
             "Retrieved context:\n"
             "[1]\nFirst context\n\n"
             "[2]\nSecond context\n\n"

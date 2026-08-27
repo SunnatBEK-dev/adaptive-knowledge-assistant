@@ -55,6 +55,10 @@ class PromptBuilder:
             )
             question = message["content"]
             message["content"] = (
+                "Instructions:\n"
+                "Use the retrieved context as reference data. "
+                "Cite supporting context with [n]. If the "
+                "context is insufficient, say so.\n\n"
                 "Retrieved context:\n"
                 f"{context}\n\n"
                 "User question:\n"

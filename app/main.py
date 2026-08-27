@@ -1,10 +1,11 @@
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from hashlib import sha256
 from pathlib import Path
 
 from ai_sdk.application.rag_manager import (
     RAGConversationManager,
 )
+from ai_sdk.application.rag_response import Citation
 from ai_sdk.config import (
     CHAT_FILE,
     CHUNK_OVERLAP,
@@ -57,6 +58,26 @@ def print_documents(
 
     for document_id in document_ids:
         print(f"- {document_id}")
+
+    print()
+
+
+def print_citations(
+    citations: Sequence[Citation],
+) -> None:
+    if not citations:
+        print()
+        return
+
+    print("Sources:")
+
+    for citation in citations:
+        print(
+            f"[{citation.position}] {citation.source} | "
+            f"document={citation.document_id} | "
+            f"chunk={citation.chunk_id} | "
+            f"score={citation.score:.3f}"
+        )
 
     print()
 
@@ -245,7 +266,8 @@ def run_cli(
                     flush=True,
                 )
 
-            print("\n")
+            print()
+            print_citations(manager.last_citations)
 
         except (EOFError, KeyboardInterrupt):
             print("\nExiting...")

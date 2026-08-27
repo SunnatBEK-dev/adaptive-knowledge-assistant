@@ -1,6 +1,10 @@
 from ai_sdk.application.conversation_manager import (
     ConversationManager,
 )
+from ai_sdk.application.rag_response import (
+    Citation,
+    RAGResponse,
+)
 from ai_sdk.context.prompt_builder import PromptBuilder
 from ai_sdk.core.conversation import Conversation
 from ai_sdk.llm.base import BaseLLMClient
@@ -41,6 +45,10 @@ class RAGConversationManager(ConversationManager):
         self.chunker = chunker
         self.retriever = retriever
         self.retrieval_k = retrieval_k
+        self._last_citations: tuple[
+            Citation,
+            ...,
+        ] = ()
 
     def index_document(
         self,
@@ -64,10 +72,26 @@ class RAGConversationManager(ConversationManager):
     def list_documents(self) -> list[str]:
         return self.retriever.list_documents()
 
+    @property
+    def last_citations(self) -> tuple[Citation, ...]:
+        return self._last_citations
+
+    def send_message_with_citations(
+        self,
+        text: str,
+    ) -> RAGResponse:
+        content = self.send_message(text)
+        return RAGResponse(
+            content=content,
+            citations=self.last_citations,
+        )
+
     def _build_messages(
         self,
         text: str,
     ) -> list[LLMMessage]:
+        self._last_citations = ()
+
         if not self.list_documents():
             return self.prompt_builder.build_messages()
 
@@ -76,6 +100,18 @@ class RAGConversationManager(ConversationManager):
             k=self.retrieval_k,
         )
 
-        return self.prompt_builder.build_messages(
+        messages = self.prompt_builder.build_messages(
             retrieval_results=retrieval_results
         )
+        self._last_citations = tuple(
+            Citation.from_search_result(
+                position,
+                result,
+            )
+            for position, result in enumerate(
+                retrieval_results,
+                start=1,
+            )
+        )
+
+        return messages
