@@ -6,7 +6,7 @@ and small abstractions over framework-specific magic.
 
 ## Current status
 
-The application architecture foundation is complete through phase 3.13:
+The application architecture foundation is complete through phase 3.14:
 
 - conversation and message domain models;
 - JSON repository abstraction;
@@ -17,7 +17,7 @@ The application architecture foundation is complete through phase 3.13:
 - Document and Chunk retrieval domain models;
 - deterministic character-based TextChunker with overlap;
 - dependency-free cosine similarity and deterministic top-k search;
-- provider-neutral VectorStore with an in-memory implementation;
+- provider-neutral VectorStore with in-memory and persistent JSON adapters;
 - SemanticRetriever orchestration for indexing and search;
 - retrieval-aware PromptBuilder without domain-state mutation;
 - RAGConversationManager for indexing, retrieval, generation, and persistence;
@@ -26,8 +26,8 @@ The application architecture foundation is complete through phase 3.13:
 - embedding cache persistence;
 - isolated unit tests and opt-in integration tests.
 
-The project now has a complete offline-tested RAG pipeline and deterministic
-retrieval-quality evaluation. Production retrieval persistence is next.
+The project now has a complete offline-tested RAG pipeline, deterministic
+retrieval-quality evaluation, and restart-safe local vector persistence.
 
 ## Architecture
 
@@ -39,7 +39,9 @@ ConversationManager / RAGConversationManager
     |-- PromptBuilder -> LLMMessage
     |-- BaseLLMClient -> ClaudeClient
     |-- BaseEmbeddingClient -> SentenceTransformerEmbeddingClient
-    |-- SemanticRetriever -> BaseVectorStore -> InMemoryVectorStore
+    |-- SemanticRetriever -> BaseVectorStore
+    |                          |-- InMemoryVectorStore
+    |                          `-- JsonVectorStore
     `-- ConversationRepository -> JsonConversationRepository
 ```
 
@@ -121,5 +123,5 @@ RUN_ANTHROPIC_INTEGRATION=1 \
 
 ## Next chapter
 
-The next Retrieval/RAG phase is a production vector-store adapter so indexed
-chunks and embeddings can survive application restarts.
+The next Retrieval/RAG phase is document-level index management: re-indexing
+changed documents and removing all chunks that belong to a deleted document.
