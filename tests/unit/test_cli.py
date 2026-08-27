@@ -22,7 +22,8 @@ def test_load_document_uses_stable_path_identity(tmp_path):
     assert first.content == "Python functions"
     assert second.content == "Updated Python functions"
     assert second.metadata == {
-        "source": str(file_path.resolve())
+        "source": str(file_path.resolve()),
+        "format": "txt",
     }
 
 
@@ -32,7 +33,7 @@ def test_load_document_rejects_missing_file(tmp_path):
 
 
 def test_load_document_rejects_non_utf8_file(tmp_path):
-    file_path = tmp_path / "binary.dat"
+    file_path = tmp_path / "binary.txt"
     file_path.write_bytes(b"\xff\xfe")
 
     with pytest.raises(ValueError, match="UTF-8"):

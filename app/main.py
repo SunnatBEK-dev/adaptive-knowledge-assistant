@@ -1,5 +1,4 @@
 from collections.abc import Callable, Sequence
-from hashlib import sha256
 from pathlib import Path
 
 from ai_sdk.application.rag_manager import (
@@ -18,6 +17,11 @@ from ai_sdk.context.prompt_builder import PromptBuilder
 from ai_sdk.core.conversation import Conversation
 from ai_sdk.embeddings.sentence_transformer import (
     SentenceTransformerEmbeddingClient,
+)
+from ai_sdk.ingestion import (
+    DocumentIngestor,
+    TextDocumentLoader,
+    create_default_ingestor,
 )
 from ai_sdk.llm.claude import ClaudeClient
 from ai_sdk.retrieval.chunker import TextChunker
@@ -48,16 +52,20 @@ def print_history(conversation: Conversation) -> None:
 def print_documents(
     manager: RAGConversationManager,
 ) -> None:
-    document_ids = manager.list_documents()
+    documents = manager.document_catalog()
 
-    if not document_ids:
+    if not documents:
         print("\nDocument index is empty.\n")
         return
 
     print("\nIndexed documents:")
 
-    for document_id in document_ids:
-        print(f"- {document_id}")
+    for document in documents:
+        print(
+            f"- {document.document_id} | "
+            f"chunks={document.chunk_count} | "
+            f"source={document.source}"
+        )
 
     print()
 
@@ -85,8 +93,8 @@ def print_citations(
 def print_help() -> None:
     print(
         "Commands:\n"
-        "  /index <path>       Index or re-index a UTF-8 text file\n"
-        "  /documents          List indexed document IDs\n"
+        "  /index <path>       Index a text file or directory\n"
+        "  /documents          Show the document catalog\n"
         "  /remove <document>  Remove a document from the index\n"
         "  /history            Show conversation history\n"
         "  /save               Save conversation history\n"
@@ -97,38 +105,15 @@ def print_help() -> None:
 
 
 def load_document(file_path: str) -> Document:
-    path = Path(file_path).expanduser()
-
-    if not path.exists():
-        raise FileNotFoundError(
-            f"Document file does not exist: {path}"
-        )
-
-    if not path.is_file():
-        raise ValueError(
-            f"Document path is not a file: {path}"
-        )
-
-    resolved_path = path.resolve()
-
-    try:
-        content = resolved_path.read_text(
-            encoding="utf-8"
-        )
-    except UnicodeDecodeError as error:
-        raise ValueError(
-            "Document must be a UTF-8 text file."
-        ) from error
-
-    path_digest = sha256(
-        str(resolved_path).encode("utf-8")
-    ).hexdigest()[:12]
-
-    return Document(
-        id=f"doc_{path_digest}",
-        content=content,
-        metadata={"source": str(resolved_path)},
+    return TextDocumentLoader().load(
+        Path(file_path)
     )
+
+
+def load_documents(
+    path: str,
+) -> list[Document]:
+    return create_default_ingestor().ingest(path)
 
 
 def build_manager() -> RAGConversationManager:
@@ -165,7 +150,9 @@ def build_manager() -> RAGConversationManager:
 def run_cli(
     manager: RAGConversationManager,
     input_fn: Callable[[str], str] = input,
+    ingestor: DocumentIngestor | None = None,
 ) -> None:
+    ingestor = ingestor or create_default_ingestor()
     print("Claude RAG Chat")
     print_help()
 
@@ -211,12 +198,26 @@ def run_cli(
                     print("Usage: /index <path>\n")
                     continue
 
-                document = load_document(argument)
-                chunks = manager.index_document(document)
-                print(
-                    f"Indexed {document.id}: "
-                    f"{len(chunks)} chunks.\n"
-                )
+                documents = ingestor.ingest(argument)
+                total_chunks = 0
+
+                for document in documents:
+                    chunks = manager.index_document(
+                        document
+                    )
+                    total_chunks += len(chunks)
+                    print(
+                        f"Indexed {document.id}: "
+                        f"{len(chunks)} chunks."
+                    )
+
+                if len(documents) > 1:
+                    print(
+                        f"Indexed {len(documents)} documents: "
+                        f"{total_chunks} total chunks."
+                    )
+
+                print()
                 continue
 
             if command == "/documents":

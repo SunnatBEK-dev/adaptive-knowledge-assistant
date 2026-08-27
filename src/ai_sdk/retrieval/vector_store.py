@@ -3,6 +3,7 @@ from collections.abc import Sequence
 
 from ai_sdk.embeddings.base import EmbeddingVector
 from ai_sdk.retrieval.chunk import Chunk
+from ai_sdk.retrieval.catalog import IndexedDocument
 from ai_sdk.retrieval.search import (
     EmbeddedChunk,
     SearchResult,
@@ -56,9 +57,18 @@ class BaseVectorStore(ABC):
         """Delete all chunks for a document and return their count."""
         raise NotImplementedError
 
-    @abstractmethod
     def document_ids(self) -> list[str]:
         """Return indexed document IDs in deterministic order."""
+        return [
+            document.document_id
+            for document in self.document_catalog()
+        ]
+
+    @abstractmethod
+    def document_catalog(
+        self,
+    ) -> list[IndexedDocument]:
+        """Return source and chunk-count summaries."""
         raise NotImplementedError
 
     @abstractmethod

@@ -2,6 +2,7 @@ from collections.abc import Sequence
 
 from ai_sdk.embeddings.base import BaseEmbeddingClient
 from ai_sdk.retrieval.chunk import Chunk
+from ai_sdk.retrieval.catalog import IndexedDocument
 from ai_sdk.retrieval.search import (
     EmbeddedChunk,
     SearchResult,
@@ -75,6 +76,11 @@ class SemanticRetriever:
 
     def list_documents(self) -> list[str]:
         return self.vector_store.document_ids()
+
+    def document_catalog(
+        self,
+    ) -> list[IndexedDocument]:
+        return self.vector_store.document_catalog()
 
     def _embed_chunks(
         self,

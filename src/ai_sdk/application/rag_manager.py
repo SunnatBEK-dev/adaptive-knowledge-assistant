@@ -10,6 +10,7 @@ from ai_sdk.core.conversation import Conversation
 from ai_sdk.llm.base import BaseLLMClient
 from ai_sdk.llm.types import LLMMessage
 from ai_sdk.retrieval.chunk import Chunk
+from ai_sdk.retrieval.catalog import IndexedDocument
 from ai_sdk.retrieval.chunker import TextChunker
 from ai_sdk.retrieval.document import Document
 from ai_sdk.retrieval.retriever import (
@@ -71,6 +72,11 @@ class RAGConversationManager(ConversationManager):
 
     def list_documents(self) -> list[str]:
         return self.retriever.list_documents()
+
+    def document_catalog(
+        self,
+    ) -> list[IndexedDocument]:
+        return self.retriever.document_catalog()
 
     @property
     def last_citations(self) -> tuple[Citation, ...]:

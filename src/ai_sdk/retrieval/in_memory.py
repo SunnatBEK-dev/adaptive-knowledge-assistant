@@ -1,6 +1,10 @@
 from collections.abc import Sequence
 
 from ai_sdk.embeddings.base import EmbeddingVector
+from ai_sdk.retrieval.catalog import (
+    IndexedDocument,
+    build_document_catalog,
+)
 from ai_sdk.retrieval.chunk import Chunk
 from ai_sdk.retrieval.search import (
     EmbeddedChunk,
@@ -117,11 +121,13 @@ class InMemoryVectorStore(BaseVectorStore):
             document_id
         )
 
-    def document_ids(self) -> list[str]:
-        return sorted({
-            chunk.document_id
+    def document_catalog(
+        self,
+    ) -> list[IndexedDocument]:
+        return build_document_catalog(
+            chunk
             for chunk, _ in self._items.values()
-        })
+        )
 
     def clear(self) -> None:
         self._items.clear()

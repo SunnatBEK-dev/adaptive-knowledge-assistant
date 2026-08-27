@@ -6,6 +6,7 @@ from ai_sdk.application.rag_manager import (
 from ai_sdk.context.prompt_builder import PromptBuilder
 from ai_sdk.core.conversation import Conversation
 from ai_sdk.retrieval.chunk import Chunk
+from ai_sdk.retrieval.catalog import IndexedDocument
 from ai_sdk.retrieval.document import Document
 from ai_sdk.retrieval.search import SearchResult
 
@@ -74,6 +75,16 @@ class FakeRetriever:
 
     def list_documents(self):
         return self.documents.copy()
+
+    def document_catalog(self):
+        return [
+            IndexedDocument(
+                document_id=document_id,
+                source=f"{document_id}.txt",
+                chunk_count=1,
+            )
+            for document_id in self.documents
+        ]
 
     def retrieve(self, query, k=5):
         self.queries.append((query, k))
@@ -172,6 +183,18 @@ def test_list_documents_delegates_to_retriever():
     assert manager.list_documents() == [
         "doc_b",
         "doc_a",
+    ]
+    assert manager.document_catalog() == [
+        IndexedDocument(
+            document_id="doc_b",
+            source="doc_b.txt",
+            chunk_count=1,
+        ),
+        IndexedDocument(
+            document_id="doc_a",
+            source="doc_a.txt",
+            chunk_count=1,
+        ),
     ]
 
 

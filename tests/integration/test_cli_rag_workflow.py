@@ -38,14 +38,24 @@ class RecordingLLMClient:
         yield "Grounded CLI answer"
 
 
-def test_cli_indexes_uses_lists_and_removes_document(
+def test_cli_indexes_directory_uses_catalog_and_removes_document(
     tmp_path,
     capsys,
 ):
-    guide_path = tmp_path / "Python guide.txt"
+    guide_directory = tmp_path / "Knowledge base"
+    guide_directory.mkdir()
+    guide_path = guide_directory / "Python guide.txt"
     guide_path.write_text(
         "Python functions contain reusable logic.",
         encoding="utf-8",
+    )
+    cooking_path = guide_directory / "Cooking.md"
+    cooking_path.write_text(
+        "Cooking recipes combine ingredients.",
+        encoding="utf-8",
+    )
+    (guide_directory / "ignored.pdf").write_bytes(
+        b"%PDF"
     )
     document_id = load_document(str(guide_path)).id
     vector_store = JsonVectorStore(
@@ -72,7 +82,7 @@ def test_cli_indexes_uses_lists_and_removes_document(
         retrieval_k=1,
     )
     commands = iter([
-        f"/index {guide_path}",
+        f"/index {guide_directory}",
         "/documents",
         "How do Python functions work?",
         f"/remove {document_id}",
@@ -86,7 +96,11 @@ def test_cli_indexes_uses_lists_and_removes_document(
     output = capsys.readouterr().out
 
     assert f"Indexed {document_id}: 1 chunks." in output
+    assert "Indexed 2 documents: 2 total chunks." in output
     assert f"- {document_id}" in output
+    assert "chunks=1" in output
+    assert f"source={guide_path.resolve()}" in output
+    assert f"source={cooking_path.resolve()}" in output
     assert "Grounded CLI answer" in output
     assert "Sources:" in output
     assert f"[1] {guide_path.resolve()}" in output
@@ -100,4 +114,4 @@ def test_cli_indexes_uses_lists_and_removes_document(
     assert "Cite supporting context with [n]" in (
         client.received_messages[-1]["content"]
     )
-    assert vector_store.count() == 0
+    assert vector_store.count() == 1

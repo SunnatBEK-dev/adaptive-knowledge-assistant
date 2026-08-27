@@ -6,7 +6,7 @@ and small abstractions over framework-specific magic.
 
 ## Current status
 
-The application architecture foundation is complete through phase 3.17:
+The application architecture foundation is complete through phase 3.18:
 
 - conversation and message domain models;
 - JSON repository abstraction;
@@ -25,13 +25,16 @@ The application architecture foundation is complete through phase 3.17:
 - offline retrieval evaluation with Hit Rate@k, Recall@k, and MRR;
 - RAG-enabled CLI for indexing, listing, and removing text documents;
 - structured RAG responses with deterministic local source citations;
+- document catalog summaries with source paths and chunk counts;
+- loader-based ingestion for text files and recursive directories;
 - conversation orchestration with rollback behavior;
 - embedding cache persistence;
 - isolated unit tests and opt-in integration tests.
 
 The project now has a complete offline-tested RAG pipeline exposed through the
 CLI, deterministic retrieval-quality evaluation, restart-safe local vector
-persistence, document-level index lifecycle, and source-aware answers.
+persistence, document-level index lifecycle, source-aware answers, and a
+loader-based ingestion layer.
 
 ## Architecture
 
@@ -47,6 +50,7 @@ RAGConversationManager
     |                          |-- InMemoryVectorStore
     |                          `-- JsonVectorStore
     |-- Retrieval results -> Citation / RAGResponse
+    |-- DocumentIngestor -> BaseDocumentLoader -> TextDocumentLoader
     `-- ConversationRepository -> JsonConversationRepository
 ```
 
@@ -99,6 +103,7 @@ RAG document commands are:
 
 ```text
 /index /absolute/path/to/guide.txt
+/index /absolute/path/to/knowledge-directory
 /documents
 /remove doc_123456789abc
 ```
@@ -107,6 +112,11 @@ Indexing the same path again replaces its old chunks. Normal prompts use the
 most relevant indexed chunks. `/history`, `/save`, `/clear`, `/help`, and
 `/exit` remain available. The first indexing run may download the configured
 SentenceTransformer model.
+
+The default ingestion layer supports UTF-8 `.txt`, `.md`, `.markdown`, and
+`.rst` files. Directory indexing scans recursively in deterministic path order
+and skips unsupported formats. `/documents` shows each source path and its
+current chunk count.
 
 After each RAG answer, the CLI prints numbered sources with document ID, chunk
 ID, and similarity score. Local source paths are mapped to citations after the
@@ -147,6 +157,6 @@ RUN_ANTHROPIC_INTEGRATION=1 \
 
 ## Next chapter
 
-The next Retrieval/RAG phase is a document catalog and ingestion layer: show
-source paths and chunk counts, then support directory and additional file
-loaders without putting parsing logic in the CLI.
+The next Retrieval/RAG phase is directory synchronization: persist which files
+belong to an indexed directory, re-index changed files, and remove stale
+documents when their source files disappear.
