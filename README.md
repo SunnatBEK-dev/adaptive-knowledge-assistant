@@ -6,7 +6,7 @@ and small abstractions over framework-specific magic.
 
 ## Current status
 
-The application architecture foundation is complete through phase 3.12:
+The application architecture foundation is complete through phase 3.13:
 
 - conversation and message domain models;
 - JSON repository abstraction;
@@ -21,12 +21,13 @@ The application architecture foundation is complete through phase 3.12:
 - SemanticRetriever orchestration for indexing and search;
 - retrieval-aware PromptBuilder without domain-state mutation;
 - RAGConversationManager for indexing, retrieval, generation, and persistence;
+- offline retrieval evaluation with Hit Rate@k, Recall@k, and MRR;
 - conversation orchestration with rollback behavior;
 - embedding cache persistence;
 - isolated unit tests and opt-in integration tests.
 
-The project now has a complete offline-tested RAG pipeline. Retrieval quality
-evaluation and production persistence are the next concerns.
+The project now has a complete offline-tested RAG pipeline and deterministic
+retrieval-quality evaluation. Production retrieval persistence is next.
 
 ## Architecture
 
@@ -120,7 +121,5 @@ RUN_ANTHROPIC_INTEGRATION=1 \
 
 ## Next chapter
 
-The planned Retrieval/RAG sequence continues with:
-
-1. retrieval quality evaluation;
-2. production retrieval persistence.
+The next Retrieval/RAG phase is a production vector-store adapter so indexed
+chunks and embeddings can survive application restarts.
