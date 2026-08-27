@@ -1,6 +1,10 @@
+from dataclasses import replace
+
 import pytest
 
 from ai_sdk.evaluation.retrieval import (
+    RetrievalComparator,
+    RetrievalComparisonReport,
     RetrievalEvalCase,
     RetrievalEvaluator,
 )
@@ -118,3 +122,101 @@ def test_evaluator_rejects_empty_dataset():
 
     with pytest.raises(ValueError, match="dataset"):
         evaluator.evaluate([])
+
+
+def test_comparator_reports_candidate_metric_improvement():
+    baseline = StubRetriever({
+        "exact": [make_result("chunk_wrong", 0)],
+        "stable": [make_result("chunk_stable", 0)],
+    })
+    candidate = StubRetriever({
+        "exact": [make_result("chunk_exact", 0)],
+        "stable": [make_result("chunk_stable", 0)],
+    })
+    cases = [
+        RetrievalEvalCase(
+            query="exact",
+            expected_chunk_ids=frozenset({
+                "chunk_exact"
+            }),
+        ),
+        RetrievalEvalCase(
+            query="stable",
+            expected_chunk_ids=frozenset({
+                "chunk_stable"
+            }),
+        ),
+    ]
+
+    comparison = RetrievalComparator(
+        baseline,
+        candidate,
+        k=1,
+    ).evaluate(cases)
+
+    assert comparison.baseline.hit_rate == pytest.approx(0.5)
+    assert comparison.candidate.hit_rate == pytest.approx(1.0)
+    assert comparison.hit_rate_delta == pytest.approx(0.5)
+    assert comparison.mean_recall_delta == pytest.approx(0.5)
+    assert comparison.mean_reciprocal_rank_delta == pytest.approx(
+        0.5
+    )
+    assert comparison.candidate_improved is True
+    assert comparison.candidate_regressed is False
+    assert baseline.calls == [("exact", 1), ("stable", 1)]
+    assert candidate.calls == [("exact", 1), ("stable", 1)]
+
+
+def test_comparator_detects_candidate_regression():
+    case = RetrievalEvalCase(
+        query="question",
+        expected_chunk_ids=frozenset({"chunk_expected"}),
+    )
+    comparison = RetrievalComparator(
+        StubRetriever({
+            "question": [make_result("chunk_expected", 0)]
+        }),
+        StubRetriever({"question": []}),
+        k=1,
+    ).evaluate([case])
+
+    assert comparison.candidate_improved is False
+    assert comparison.candidate_regressed is True
+
+
+@pytest.mark.parametrize(
+    ("field", "message"),
+    [
+        ("k", "top-k"),
+        ("results", "dataset"),
+    ],
+)
+def test_comparison_report_rejects_incompatible_reports(
+    field,
+    message,
+):
+    case = RetrievalEvalCase(
+        query="question",
+        expected_chunk_ids=frozenset({"chunk_expected"}),
+    )
+    comparison = RetrievalComparator(
+        StubRetriever({"question": []}),
+        StubRetriever({"question": []}),
+        k=1,
+    ).evaluate([case])
+    candidate = replace(
+        comparison.candidate,
+        **{
+            field: (
+                2
+                if field == "k"
+                else comparison.candidate.results * 2
+            )
+        },
+    )
+
+    with pytest.raises(ValueError, match=message):
+        RetrievalComparisonReport(
+            baseline=comparison.baseline,
+            candidate=candidate,
+        )

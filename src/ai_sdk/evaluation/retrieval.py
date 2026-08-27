@@ -78,6 +78,77 @@ class RetrievalEvalReport:
         return len(self.results)
 
 
+@dataclass(frozen=True)
+class RetrievalComparisonReport:
+    """Metric deltas between a baseline and candidate retriever."""
+
+    baseline: RetrievalEvalReport
+    candidate: RetrievalEvalReport
+
+    def __post_init__(self) -> None:
+        if self.baseline.k != self.candidate.k:
+            raise ValueError(
+                "Compared retrieval reports must use the same top-k."
+            )
+
+        baseline_cases = tuple(
+            result.case
+            for result in self.baseline.results
+        )
+        candidate_cases = tuple(
+            result.case
+            for result in self.candidate.results
+        )
+
+        if baseline_cases != candidate_cases:
+            raise ValueError(
+                "Compared retrieval reports must use the same dataset."
+            )
+
+    @property
+    def hit_rate_delta(self) -> float:
+        return (
+            self.candidate.hit_rate
+            - self.baseline.hit_rate
+        )
+
+    @property
+    def mean_recall_delta(self) -> float:
+        return (
+            self.candidate.mean_recall
+            - self.baseline.mean_recall
+        )
+
+    @property
+    def mean_reciprocal_rank_delta(self) -> float:
+        return (
+            self.candidate.mean_reciprocal_rank
+            - self.baseline.mean_reciprocal_rank
+        )
+
+    @property
+    def candidate_improved(self) -> bool:
+        deltas = self._deltas()
+        return (
+            all(delta >= 0.0 for delta in deltas)
+            and any(delta > 0.0 for delta in deltas)
+        )
+
+    @property
+    def candidate_regressed(self) -> bool:
+        return any(
+            delta < 0.0
+            for delta in self._deltas()
+        )
+
+    def _deltas(self) -> tuple[float, float, float]:
+        return (
+            self.hit_rate_delta,
+            self.mean_recall_delta,
+            self.mean_reciprocal_rank_delta,
+        )
+
+
 class RetrievalEvaluator:
     """Measure Hit Rate, Recall, and MRR without an LLM judge."""
 
@@ -167,4 +238,38 @@ class RetrievalEvaluator:
                 / len(case.expected_chunk_ids)
             ),
             reciprocal_rank=reciprocal_rank,
+        )
+
+
+class RetrievalComparator:
+    """Evaluate two retrievers on exactly the same labeled cases."""
+
+    def __init__(
+        self,
+        baseline: _Retriever,
+        candidate: _Retriever,
+        k: int = 5,
+    ) -> None:
+        self.baseline_evaluator = RetrievalEvaluator(
+            baseline,
+            k=k,
+        )
+        self.candidate_evaluator = RetrievalEvaluator(
+            candidate,
+            k=k,
+        )
+
+    def evaluate(
+        self,
+        cases: Sequence[RetrievalEvalCase],
+    ) -> RetrievalComparisonReport:
+        case_list = tuple(cases)
+
+        return RetrievalComparisonReport(
+            baseline=self.baseline_evaluator.evaluate(
+                case_list
+            ),
+            candidate=self.candidate_evaluator.evaluate(
+                case_list
+            ),
         )

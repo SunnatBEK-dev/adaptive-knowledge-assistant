@@ -6,7 +6,7 @@ and small abstractions over framework-specific magic.
 
 ## Current status
 
-The application architecture foundation is complete through phase 3.20:
+The application architecture foundation is complete through phase 3.21:
 
 - conversation and message domain models;
 - JSON repository abstraction;
@@ -25,6 +25,7 @@ The application architecture foundation is complete through phase 3.20:
 - retrieval-aware PromptBuilder without domain-state mutation;
 - RAGConversationManager for indexing, retrieval, generation, and persistence;
 - offline retrieval evaluation with Hit Rate@k, Recall@k, and MRR;
+- baseline-versus-candidate retrieval comparison with metric deltas;
 - RAG-enabled CLI for indexing, listing, and removing text documents;
 - structured RAG responses with deterministic local source citations;
 - document catalog summaries with source paths and chunk counts;
@@ -38,10 +39,11 @@ The application architecture foundation is complete through phase 3.20:
 The project now has a complete offline-tested RAG pipeline exposed through the
 CLI, deterministic retrieval-quality evaluation, restart-safe local vector
 persistence, document-level index lifecycle, source-aware answers, and a
-loader-based ingestion layer. Normal RAG queries now combine semantic
-similarity with exact lexical evidence. Directory-backed indexes also remain
-synchronized across application restarts without embedding unchanged files
-again.
+loader-based ingestion layer. Normal RAG queries combine semantic similarity
+with exact lexical evidence. The evaluation layer can compare this hybrid
+candidate against a semantic baseline and explicitly report improvements or
+regressions. Directory-backed indexes also remain synchronized across
+application restarts without embedding unchanged files again.
 
 ## Architecture
 
@@ -170,6 +172,7 @@ RUN_ANTHROPIC_INTEGRATION=1 \
 
 ## Next chapter
 
-The next step is to compare semantic-only and hybrid retrieval on the existing
-evaluation dataset. Add reranking only if those measurements show a real gap;
-otherwise continue to Memory Systems with a sliding context window.
+The deterministic comparison dataset shows hybrid retrieval improving Hit
+Rate@1, Recall@1, and MRR without a regression. Reranking is therefore deferred
+until a real project dataset demonstrates a gap. The next chapter is Memory
+Systems, starting with a token-aware sliding context window.
