@@ -12,6 +12,7 @@ The application architecture foundation is complete through phase 3.12:
 - JSON repository abstraction;
 - provider-neutral prompt construction;
 - Anthropic/Claude adapter behind an LLM contract;
+- provider-neutral embedding-client contract;
 - conversation orchestration with rollback behavior;
 - embedding cache persistence;
 - isolated unit tests and opt-in integration tests.
@@ -103,9 +104,9 @@ RUN_ANTHROPIC_INTEGRATION=1 \
 
 ## Next chapter
 
-The planned Retrieval/RAG sequence is:
+The planned Retrieval/RAG sequence continues with:
 
-1. embedding-client abstraction;
+1. SentenceTransformer embedding adapter;
 2. document and chunk domain models;
 3. deterministic chunking;
 4. cosine similarity and top-k retrieval;
