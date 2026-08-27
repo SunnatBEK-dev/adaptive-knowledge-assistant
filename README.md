@@ -6,7 +6,7 @@ and small abstractions over framework-specific magic.
 
 ## Current status
 
-The application architecture foundation is complete through Memory phase 4.2:
+The application architecture foundation is complete through Memory phase 4.3:
 
 - conversation and message domain models;
 - JSON repository abstraction;
@@ -14,6 +14,7 @@ The application architecture foundation is complete through Memory phase 4.2:
 - provider-neutral token counting with a deterministic local estimator;
 - turn-aware sliding context windows with a configurable token budget;
 - bounded extractive summary memory for turns outside the active window;
+- explicit persistent long-term memory with lexical relevance retrieval;
 - Anthropic/Claude adapter behind an LLM contract;
 - provider-neutral embedding-client contract;
 - lazy SentenceTransformer embedding adapter;
@@ -50,7 +51,8 @@ the newest complete turns within the configured token budget are sent directly
 to the model. Recent excluded turns are compressed into a bounded local memory
 block without another API call. Directory-backed indexes also remain
 synchronized across application restarts without embedding unchanged files
-again.
+again. User-approved durable facts are stored separately and only relevant
+matches are added to a new prompt.
 
 ## Architecture
 
@@ -71,6 +73,7 @@ RAGConversationManager
     |-- Retrieval results -> Citation / RAGResponse
     |-- DirectorySynchronizer -> DocumentIngestor
     |                            `-- BaseDocumentLoader -> TextDocumentLoader
+    |-- BaseMemoryStore -> JsonMemoryStore -> BM25 recall
     `-- ConversationRepository -> JsonConversationRepository
 ```
 
@@ -111,6 +114,7 @@ CHUNK_OVERLAP=50
 RETRIEVAL_K=3
 CONTEXT_TOKEN_BUDGET=3000
 CONTEXT_SUMMARY_TOKEN_BUDGET=400
+MEMORY_RETRIEVAL_K=3
 ```
 
 Never commit `.env`, API keys, or real conversation data.
@@ -130,6 +134,14 @@ RAG document commands are:
 /remove doc_123456789abc
 ```
 
+Long-term memory commands are:
+
+```text
+/remember Preferred language is Uzbek
+/memories
+/forget mem_123456789abc
+```
+
 Indexing the same file again replaces its old chunks. Indexing a directory
 performs an incremental synchronization: new and changed files are indexed,
 unchanged files are skipped, and documents whose source files disappeared are
@@ -145,6 +157,12 @@ persistence continue to keep the complete conversation.
 `CONTEXT_SUMMARY_TOKEN_BUDGET` limits the deterministic extractive memory made
 from excluded turns. This local summarizer adds no model request, token charge,
 or network latency.
+
+Long-term memory is explicit: the application never guesses which facts to
+store. `/remember` persists a user-approved fact in `data/memories.json`, and
+lexical retrieval adds only matching memories to later prompts. `/clear`
+removes conversation history but leaves long-term memory intact; use `/forget`
+to delete a stored fact.
 
 The default ingestion layer supports UTF-8 `.txt`, `.md`, `.markdown`, and
 `.rst` files. Directory synchronization scans recursively in deterministic
@@ -191,6 +209,7 @@ RUN_ANTHROPIC_INTEGRATION=1 \
 
 ## Next chapter
 
-The next Memory Systems phase is long-term memory: explicitly store durable
-user facts and preferences separately from raw conversation history, then
-retrieve only relevant memories for a new request.
+The Memory Systems foundation is now complete: short-term conversation state,
+sliding context, summary memory, persistent long-term memory, and relevant
+memory recall are implemented. The next chapter is Tool Calling, starting with
+provider-neutral tool schemas and strict argument validation.

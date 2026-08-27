@@ -13,6 +13,7 @@ DATA_DIR = PROJECT_ROOT / "data"
 CHAT_FILE = DATA_DIR / "chat.json"
 EMBEDDINGS_FILE = DATA_DIR / "embeddings.json"
 VECTOR_STORE_FILE = DATA_DIR / "vectors.json"
+MEMORY_FILE = DATA_DIR / "memories.json"
 
 API_KEY = os.getenv("ANTHROPIC_API_KEY")
 MODEL = os.getenv("MODEL")
@@ -48,4 +49,8 @@ CONTEXT_TOKEN_BUDGET = int(
 
 CONTEXT_SUMMARY_TOKEN_BUDGET = int(
     os.getenv("CONTEXT_SUMMARY_TOKEN_BUDGET", "400")
+)
+
+MEMORY_RETRIEVAL_K = int(
+    os.getenv("MEMORY_RETRIEVAL_K", "3")
 )

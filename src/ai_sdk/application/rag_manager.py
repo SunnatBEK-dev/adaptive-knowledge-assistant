@@ -9,6 +9,7 @@ from ai_sdk.context.prompt_builder import PromptBuilder
 from ai_sdk.core.conversation import Conversation
 from ai_sdk.llm.base import BaseLLMClient
 from ai_sdk.llm.types import LLMMessage
+from ai_sdk.memory.base import BaseMemoryStore
 from ai_sdk.retrieval.chunk import Chunk
 from ai_sdk.retrieval.catalog import IndexedDocument
 from ai_sdk.retrieval.chunker import TextChunker
@@ -31,6 +32,8 @@ class RAGConversationManager(ConversationManager):
         chunker: TextChunker,
         retriever: SemanticRetriever,
         retrieval_k: int = 3,
+        memory_store: BaseMemoryStore | None = None,
+        memory_retrieval_k: int = 3,
     ) -> None:
         if retrieval_k <= 0:
             raise ValueError(
@@ -42,6 +45,8 @@ class RAGConversationManager(ConversationManager):
             prompt_builder=prompt_builder,
             client=client,
             repository=repository,
+            memory_store=memory_store,
+            memory_retrieval_k=memory_retrieval_k,
         )
         self.chunker = chunker
         self.retriever = retriever
@@ -97,9 +102,12 @@ class RAGConversationManager(ConversationManager):
         text: str,
     ) -> list[LLMMessage]:
         self._last_citations = ()
+        memory_results = self._recall_memories(text)
 
         if not self.list_documents():
-            return self.prompt_builder.build_messages()
+            return self.prompt_builder.build_messages(
+                memory_results=memory_results
+            )
 
         retrieval_results = self.retriever.retrieve(
             query=text,
@@ -107,7 +115,8 @@ class RAGConversationManager(ConversationManager):
         )
 
         messages = self.prompt_builder.build_messages(
-            retrieval_results=retrieval_results
+            retrieval_results=retrieval_results,
+            memory_results=memory_results,
         )
         self._last_citations = tuple(
             Citation.from_search_result(

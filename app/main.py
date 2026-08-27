@@ -12,6 +12,8 @@ from ai_sdk.config import (
     CONTEXT_SUMMARY_TOKEN_BUDGET,
     CONTEXT_TOKEN_BUDGET,
     EMBEDDING_MODEL,
+    MEMORY_FILE,
+    MEMORY_RETRIEVAL_K,
     RETRIEVAL_K,
     VECTOR_STORE_FILE,
 )
@@ -31,6 +33,7 @@ from ai_sdk.ingestion import (
     create_default_ingestor,
 )
 from ai_sdk.llm.claude import ClaudeClient
+from ai_sdk.memory.json_store import JsonMemoryStore
 from ai_sdk.retrieval.chunker import TextChunker
 from ai_sdk.retrieval.document import Document
 from ai_sdk.retrieval.hybrid import HybridRetriever
@@ -97,12 +100,32 @@ def print_citations(
     print()
 
 
+def print_memories(
+    manager: RAGConversationManager,
+) -> None:
+    memories = manager.list_memories()
+
+    if not memories:
+        print("\nLong-term memory is empty.\n")
+        return
+
+    print("\nLong-term memories:")
+
+    for memory in memories:
+        print(f"- {memory.id} | {memory.content}")
+
+    print()
+
+
 def print_help() -> None:
     print(
         "Commands:\n"
         "  /index <path>       Index a file or sync a directory\n"
         "  /documents          Show the document catalog\n"
         "  /remove <document>  Remove a document from the index\n"
+        "  /remember <fact>    Store a long-term memory\n"
+        "  /memories           Show long-term memories\n"
+        "  /forget <memory>    Remove a long-term memory\n"
         "  /history            Show conversation history\n"
         "  /save               Save conversation history\n"
         "  /clear              Clear conversation history\n"
@@ -163,6 +186,8 @@ def build_manager() -> RAGConversationManager:
         ),
         retriever=retriever,
         retrieval_k=RETRIEVAL_K,
+        memory_store=JsonMemoryStore(MEMORY_FILE),
+        memory_retrieval_k=MEMORY_RETRIEVAL_K,
     )
 
 
@@ -210,6 +235,31 @@ def run_cli(
 
             if command == "/history":
                 print_history(manager.conversation)
+                continue
+
+            if command == "/remember":
+                if not argument:
+                    print("Usage: /remember <fact>\n")
+                    continue
+
+                memory = manager.remember(argument)
+                print(f"Remembered {memory.id}.\n")
+                continue
+
+            if command == "/memories":
+                print_memories(manager)
+                continue
+
+            if command == "/forget":
+                if not argument:
+                    print("Usage: /forget <memory_id>\n")
+                    continue
+
+                if manager.forget(argument):
+                    print(f"Forgot {argument}.\n")
+                else:
+                    print(f"Memory not found: {argument}\n")
+
                 continue
 
             if command == "/index":

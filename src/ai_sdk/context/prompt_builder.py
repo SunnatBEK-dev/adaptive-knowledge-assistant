@@ -4,6 +4,7 @@ from ai_sdk.core.conversation import Conversation
 from ai_sdk.context.summary import ConversationSummarizer
 from ai_sdk.context.window import SlidingContextWindow
 from ai_sdk.llm.types import LLMMessage
+from ai_sdk.memory.model import MemorySearchResult
 from ai_sdk.retrieval.search import SearchResult
 
 
@@ -28,6 +29,9 @@ class PromptBuilder:
         self,
         retrieval_results: Sequence[
             SearchResult
+        ] = (),
+        memory_results: Sequence[
+            MemorySearchResult
         ] = (),
     ) -> list[LLMMessage]:
         messages: list[LLMMessage] = []
@@ -63,6 +67,12 @@ class PromptBuilder:
                         messages,
                         summary,
                     )
+
+        if memory_results:
+            self._augment_latest_user_with_memories(
+                messages,
+                memory_results,
+            )
 
         return messages
 
@@ -122,4 +132,34 @@ class PromptBuilder:
 
         raise RuntimeError(
             "Summary memory requires a user message."
+        )
+
+    @staticmethod
+    def _augment_latest_user_with_memories(
+        messages: list[LLMMessage],
+        memory_results: Sequence[MemorySearchResult],
+    ) -> None:
+        for message in reversed(messages):
+            if message["role"] != "user":
+                continue
+
+            memory_context = "\n".join(
+                f"[M{index}] {result.memory.content}"
+                for index, result in enumerate(
+                    memory_results,
+                    start=1,
+                )
+            )
+            current_prompt = message["content"]
+            message["content"] = (
+                "Relevant user-approved long-term memory "
+                "(use only when helpful):\n"
+                f"{memory_context}\n\n"
+                "Current prompt:\n"
+                f"{current_prompt}"
+            )
+            return
+
+        raise RuntimeError(
+            "Long-term memory requires a user message."
         )

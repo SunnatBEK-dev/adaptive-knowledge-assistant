@@ -6,6 +6,10 @@ from ai_sdk.context.summary import (
 )
 from ai_sdk.context.window import SlidingContextWindow
 from ai_sdk.core.conversation import Conversation
+from ai_sdk.memory.model import (
+    LongTermMemory,
+    MemorySearchResult,
+)
 from ai_sdk.retrieval.chunk import Chunk
 from ai_sdk.retrieval.search import SearchResult
 
@@ -177,3 +181,25 @@ def test_summary_memory_requires_context_window():
                 max_tokens=10
             ),
         )
+
+
+def test_build_messages_injects_relevant_long_term_memory():
+    conversation = Conversation()
+    conversation.add_user("Which language should I use?")
+    memory = LongTermMemory(
+        id="mem_language",
+        content="Preferred language is Uzbek",
+    )
+
+    messages = PromptBuilder(conversation).build_messages(
+        memory_results=[MemorySearchResult(memory, 1.0)]
+    )
+
+    assert "[M1] Preferred language is Uzbek" in (
+        messages[-1]["content"]
+    )
+    assert "Which language should I use?" in (
+        messages[-1]["content"]
+    )
+    assert "mem_language" not in messages[-1]["content"]
+    assert "1.0" not in messages[-1]["content"]
