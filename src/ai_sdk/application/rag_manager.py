@@ -47,8 +47,19 @@ class RAGConversationManager(ConversationManager):
         document: Document,
     ) -> list[Chunk]:
         chunks = self.chunker.split(document)
-        self.retriever.index(chunks)
+        self.retriever.index_document(
+            document.id,
+            chunks,
+        )
         return chunks
+
+    def delete_document(
+        self,
+        document_id: str,
+    ) -> int:
+        return self.retriever.delete_document(
+            document_id
+        )
 
     def _build_messages(
         self,

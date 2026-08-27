@@ -49,10 +49,18 @@ class FakeRetriever:
         self.results = results or []
         self.error = error
         self.indexed = []
+        self.deleted_documents = []
         self.queries = []
 
-    def index(self, chunks):
-        self.indexed.append(list(chunks))
+    def index_document(self, document_id, chunks):
+        self.indexed.append((
+            document_id,
+            list(chunks),
+        ))
+
+    def delete_document(self, document_id):
+        self.deleted_documents.append(document_id)
+        return 2
 
     def retrieve(self, query, k=5):
         self.queries.append((query, k))
@@ -121,7 +129,22 @@ def test_index_document_chunks_and_indexes_content():
 
     assert chunks == [chunk]
     assert chunker.documents == [document]
-    assert retriever.indexed == [[chunk]]
+    assert retriever.indexed == [(
+        document.id,
+        [chunk],
+    )]
+
+
+def test_delete_document_delegates_to_retriever():
+    retriever = FakeRetriever()
+    manager, _, _, _, _, _ = build_manager(
+        retriever=retriever
+    )
+
+    deleted_count = manager.delete_document("doc_rag")
+
+    assert deleted_count == 2
+    assert retriever.deleted_documents == ["doc_rag"]
 
 
 def test_send_message_retrieves_context_before_llm_call():

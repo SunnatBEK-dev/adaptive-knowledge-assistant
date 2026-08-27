@@ -28,6 +28,15 @@ class BaseVectorStore(ABC):
             self.add(chunk, vector)
 
     @abstractmethod
+    def replace_document(
+        self,
+        document_id: str,
+        items: Sequence[EmbeddedChunk],
+    ) -> None:
+        """Atomically replace every chunk for one document."""
+        raise NotImplementedError
+
+    @abstractmethod
     def search(
         self,
         query_vector: EmbeddingVector,
@@ -37,6 +46,14 @@ class BaseVectorStore(ABC):
 
     @abstractmethod
     def delete(self, chunk_id: str) -> bool:
+        raise NotImplementedError
+
+    @abstractmethod
+    def delete_document(
+        self,
+        document_id: str,
+    ) -> int:
+        """Delete all chunks for a document and return their count."""
         raise NotImplementedError
 
     @abstractmethod

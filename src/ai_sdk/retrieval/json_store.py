@@ -66,6 +66,33 @@ class JsonVectorStore(BaseVectorStore):
             self._dimension = previous_dimension
             raise
 
+    def replace_document(
+        self,
+        document_id: str,
+        items: Sequence[EmbeddedChunk],
+    ) -> None:
+        item_list = list(items)
+        self._validate_document_items(
+            document_id,
+            item_list,
+        )
+        previous_items = self._items.copy()
+        previous_dimension = self._dimension
+
+        try:
+            self._delete_document_in_memory(
+                document_id
+            )
+
+            for chunk, vector in item_list:
+                self._add_in_memory(chunk, vector)
+
+            self._save()
+        except Exception:
+            self._items = previous_items
+            self._dimension = previous_dimension
+            raise
+
     def search(
         self,
         query_vector: EmbeddingVector,
@@ -106,6 +133,31 @@ class JsonVectorStore(BaseVectorStore):
 
         return True
 
+    def delete_document(
+        self,
+        document_id: str,
+    ) -> int:
+        self._validate_document_id(document_id)
+        previous_items = self._items.copy()
+        previous_dimension = self._dimension
+        deleted_count = (
+            self._delete_document_in_memory(
+                document_id
+            )
+        )
+
+        if deleted_count == 0:
+            return 0
+
+        try:
+            self._save()
+        except Exception:
+            self._items = previous_items
+            self._dimension = previous_dimension
+            raise
+
+        return deleted_count
+
     def clear(self) -> None:
         previous_items = self._items.copy()
         previous_dimension = self._dimension
@@ -121,6 +173,51 @@ class JsonVectorStore(BaseVectorStore):
 
     def count(self) -> int:
         return len(self._items)
+
+    def _delete_document_in_memory(
+        self,
+        document_id: str,
+    ) -> int:
+        chunk_ids = [
+            chunk_id
+            for chunk_id, (chunk, _) in self._items.items()
+            if chunk.document_id == document_id
+        ]
+
+        for chunk_id in chunk_ids:
+            del self._items[chunk_id]
+
+        if not self._items:
+            self._dimension = None
+
+        return len(chunk_ids)
+
+    @staticmethod
+    def _validate_document_items(
+        document_id: str,
+        items: Sequence[EmbeddedChunk],
+    ) -> None:
+        JsonVectorStore._validate_document_id(
+            document_id
+        )
+
+        if any(
+            chunk.document_id != document_id
+            for chunk, _ in items
+        ):
+            raise ValueError(
+                "Replacement chunks must belong to the "
+                "requested document."
+            )
+
+    @staticmethod
+    def _validate_document_id(
+        document_id: str,
+    ) -> None:
+        if not document_id.strip():
+            raise ValueError(
+                "Document ID cannot be empty."
+            )
 
     def _add_in_memory(
         self,

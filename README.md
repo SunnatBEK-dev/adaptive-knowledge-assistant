@@ -6,7 +6,7 @@ and small abstractions over framework-specific magic.
 
 ## Current status
 
-The application architecture foundation is complete through phase 3.14:
+The application architecture foundation is complete through phase 3.15:
 
 - conversation and message domain models;
 - JSON repository abstraction;
@@ -18,6 +18,7 @@ The application architecture foundation is complete through phase 3.14:
 - deterministic character-based TextChunker with overlap;
 - dependency-free cosine similarity and deterministic top-k search;
 - provider-neutral VectorStore with in-memory and persistent JSON adapters;
+- atomic document re-indexing and document-level chunk deletion;
 - SemanticRetriever orchestration for indexing and search;
 - retrieval-aware PromptBuilder without domain-state mutation;
 - RAGConversationManager for indexing, retrieval, generation, and persistence;
@@ -27,7 +28,8 @@ The application architecture foundation is complete through phase 3.14:
 - isolated unit tests and opt-in integration tests.
 
 The project now has a complete offline-tested RAG pipeline, deterministic
-retrieval-quality evaluation, and restart-safe local vector persistence.
+retrieval-quality evaluation, restart-safe local vector persistence, and a
+document-level index lifecycle.
 
 ## Architecture
 
@@ -123,5 +125,5 @@ RUN_ANTHROPIC_INTEGRATION=1 \
 
 ## Next chapter
 
-The next Retrieval/RAG phase is document-level index management: re-indexing
-changed documents and removing all chunks that belong to a deleted document.
+The next Retrieval/RAG phase is CLI integration: commands for indexing,
+listing, and removing documents, plus RAG-backed chat in `app/main.py`.

@@ -2,7 +2,10 @@ from collections.abc import Sequence
 
 from ai_sdk.embeddings.base import BaseEmbeddingClient
 from ai_sdk.retrieval.chunk import Chunk
-from ai_sdk.retrieval.search import SearchResult
+from ai_sdk.retrieval.search import (
+    EmbeddedChunk,
+    SearchResult,
+)
 from ai_sdk.retrieval.vector_store import (
     BaseVectorStore,
 )
@@ -23,10 +26,61 @@ class SemanticRetriever:
         self,
         chunks: Sequence[Chunk],
     ) -> None:
+        items = self._embed_chunks(chunks)
+
+        if not items:
+            return
+
+        self.vector_store.add_many(items)
+
+    def index_document(
+        self,
+        document_id: str,
+        chunks: Sequence[Chunk],
+    ) -> None:
+        if not document_id.strip():
+            raise ValueError(
+                "Document ID cannot be empty."
+            )
+
+        chunk_list = list(chunks)
+
+        if any(
+            chunk.document_id != document_id
+            for chunk in chunk_list
+        ):
+            raise ValueError(
+                "Indexed chunks must belong to the "
+                "requested document."
+            )
+
+        items = self._embed_chunks(chunk_list)
+        self.vector_store.replace_document(
+            document_id,
+            items,
+        )
+
+    def delete_document(
+        self,
+        document_id: str,
+    ) -> int:
+        if not document_id.strip():
+            raise ValueError(
+                "Document ID cannot be empty."
+            )
+
+        return self.vector_store.delete_document(
+            document_id
+        )
+
+    def _embed_chunks(
+        self,
+        chunks: Sequence[Chunk],
+    ) -> list[EmbeddedChunk]:
         chunk_list = list(chunks)
 
         if not chunk_list:
-            return
+            return []
 
         vectors = self.embedding_client.embed([
             chunk.content
@@ -39,11 +93,11 @@ class SemanticRetriever:
                 "for each chunk."
             )
 
-        self.vector_store.add_many(list(zip(
+        return list(zip(
             chunk_list,
             vectors,
             strict=True,
-        )))
+        ))
 
     def retrieve(
         self,

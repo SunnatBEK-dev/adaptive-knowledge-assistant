@@ -105,3 +105,102 @@ def test_retriever_rejects_blank_query():
 
     with pytest.raises(ValueError, match="query"):
         retriever.retrieve("   ")
+
+
+def test_retriever_replaces_and_deletes_document_index():
+    embeddings = RecordingEmbeddingClient({
+        "Old content": [1.0, 0.0],
+        "New content": [0.0, 1.0],
+    })
+    store = InMemoryVectorStore()
+    retriever = SemanticRetriever(embeddings, store)
+    old_chunk = make_chunk(
+        "chunk_old",
+        "Old content",
+        0,
+    )
+    new_chunk = make_chunk(
+        "chunk_new",
+        "New content",
+        0,
+    )
+
+    retriever.index_document(
+        "doc_retriever",
+        [old_chunk],
+    )
+    retriever.index_document(
+        "doc_retriever",
+        [new_chunk],
+    )
+
+    assert store.count() == 1
+    assert store.search(
+        [0.0, 1.0],
+        k=1,
+    )[0].chunk is new_chunk
+    assert retriever.delete_document(
+        "doc_retriever"
+    ) == 1
+    assert retriever.delete_document(
+        "doc_retriever"
+    ) == 0
+
+
+def test_failed_reindex_preserves_existing_document():
+    store = InMemoryVectorStore()
+    retriever = SemanticRetriever(
+        RecordingEmbeddingClient({
+            "Old content": [1.0, 0.0],
+        }),
+        store,
+    )
+    old_chunk = make_chunk(
+        "chunk_old",
+        "Old content",
+        0,
+    )
+    new_chunk = make_chunk(
+        "chunk_new",
+        "New content",
+        0,
+    )
+    retriever.index_document(
+        "doc_retriever",
+        [old_chunk],
+    )
+    retriever.embedding_client = BrokenEmbeddingClient()
+
+    with pytest.raises(RuntimeError, match="each chunk"):
+        retriever.index_document(
+            "doc_retriever",
+            [new_chunk],
+        )
+
+    assert store.count() == 1
+    assert store.search(
+        [1.0, 0.0],
+        k=1,
+    )[0].chunk is old_chunk
+
+
+def test_retriever_rejects_chunk_from_another_document():
+    embeddings = RecordingEmbeddingClient()
+    retriever = SemanticRetriever(
+        embeddings,
+        InMemoryVectorStore(),
+    )
+    chunk = Chunk(
+        id="chunk_other",
+        document_id="doc_other",
+        content="Other",
+        index=0,
+    )
+
+    with pytest.raises(ValueError, match="belong"):
+        retriever.index_document(
+            "doc_requested",
+            [chunk],
+        )
+
+    assert embeddings.calls == []

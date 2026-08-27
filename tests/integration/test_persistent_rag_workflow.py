@@ -47,14 +47,18 @@ def test_rag_reuses_persisted_index_after_restart(tmp_path):
         embedding_client=embedding_client,
         vector_store=JsonVectorStore(vector_path),
     )
+    document = Document(
+        id="doc_persistent_rag",
+        content="Python functions Cooking recipes",
+    )
     chunks = TextChunker(
         chunk_size=16,
         overlap=0,
-    ).split(Document(
-        id="doc_persistent_rag",
-        content="Python functions Cooking recipes",
-    ))
-    first_retriever.index(chunks)
+    ).split(document)
+    first_retriever.index_document(
+        document.id,
+        chunks,
+    )
 
     restarted_retriever = SemanticRetriever(
         embedding_client=embedding_client,
@@ -83,3 +87,51 @@ def test_rag_reuses_persisted_index_after_restart(tmp_path):
     assert "Python functions" in (
         client.received_messages[-1]["content"]
     )
+
+
+def test_reindex_and_delete_document_persist_after_restart(
+    tmp_path,
+):
+    vector_path = tmp_path / "vectors.json"
+    chunker = TextChunker(
+        chunk_size=100,
+        overlap=0,
+    )
+    retriever = SemanticRetriever(
+        embedding_client=KeywordEmbeddingClient(),
+        vector_store=JsonVectorStore(vector_path),
+    )
+    original = Document(
+        id="doc_lifecycle",
+        content="Python functions",
+    )
+    updated = Document(
+        id="doc_lifecycle",
+        content="Cooking recipes",
+    )
+    original_chunks = chunker.split(original)
+    updated_chunks = chunker.split(updated)
+
+    retriever.index_document(
+        original.id,
+        original_chunks,
+    )
+    restarted = SemanticRetriever(
+        embedding_client=KeywordEmbeddingClient(),
+        vector_store=JsonVectorStore(vector_path),
+    )
+    restarted.index_document(
+        updated.id,
+        updated_chunks,
+    )
+
+    after_reindex = JsonVectorStore(vector_path)
+    assert after_reindex.count() == 1
+    assert after_reindex.search(
+        [0.0, 1.0],
+        k=1,
+    )[0].chunk.id == updated_chunks[0].id
+    assert restarted.delete_document(
+        updated.id
+    ) == 1
+    assert JsonVectorStore(vector_path).count() == 0

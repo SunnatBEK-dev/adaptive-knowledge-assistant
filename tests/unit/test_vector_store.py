@@ -6,10 +6,14 @@ from ai_sdk.retrieval.in_memory import (
 )
 
 
-def make_chunk(chunk_id: str, index: int = 0) -> Chunk:
+def make_chunk(
+    chunk_id: str,
+    index: int = 0,
+    document_id: str = "doc_store",
+) -> Chunk:
     return Chunk(
         id=chunk_id,
-        document_id="doc_store",
+        document_id=document_id,
         content=f"Content {index}",
         index=index,
     )
@@ -85,3 +89,89 @@ def test_store_delete_and_clear_reset_dimension():
 
     assert store.count() == 0
     assert store.search([1.0], k=1) == []
+
+
+def test_store_replaces_and_deletes_document_chunks():
+    store = InMemoryVectorStore()
+    old_first = make_chunk(
+        "chunk_old_first",
+        document_id="doc_replace",
+    )
+    old_second = make_chunk(
+        "chunk_old_second",
+        index=1,
+        document_id="doc_replace",
+    )
+    other = make_chunk(
+        "chunk_other",
+        document_id="doc_other",
+    )
+    replacement = make_chunk(
+        "chunk_replacement",
+        document_id="doc_replace",
+    )
+    store.add_many([
+        (old_first, [1.0, 0.0]),
+        (old_second, [0.8, 0.2]),
+        (other, [0.0, 1.0]),
+    ])
+
+    store.replace_document(
+        "doc_replace",
+        [(replacement, [1.0, 0.0])],
+    )
+
+    result_ids = {
+        result.chunk.id
+        for result in store.search(
+            [1.0, 0.0],
+            k=5,
+        )
+    }
+    assert result_ids == {
+        "chunk_replacement",
+        "chunk_other",
+    }
+    assert store.delete_document("doc_replace") == 1
+    assert store.delete_document("doc_replace") == 0
+    assert store.count() == 1
+
+
+def test_store_rolls_back_invalid_document_replacement():
+    store = InMemoryVectorStore()
+    original = make_chunk(
+        "chunk_original",
+        document_id="doc_replace",
+    )
+    other = make_chunk(
+        "chunk_other",
+        document_id="doc_other",
+    )
+    store.add_many([
+        (original, [1.0, 0.0]),
+        (other, [0.0, 1.0]),
+    ])
+
+    with pytest.raises(ValueError, match="dimension"):
+        store.replace_document(
+            "doc_replace",
+            [(
+                make_chunk(
+                    "chunk_invalid",
+                    document_id="doc_replace",
+                ),
+                [1.0, 0.0, 0.0],
+            )],
+        )
+
+    with pytest.raises(ValueError, match="belong"):
+        store.replace_document(
+            "doc_replace",
+            [(other, [0.0, 1.0])],
+        )
+
+    assert store.count() == 2
+    assert store.search(
+        [1.0, 0.0],
+        k=1,
+    )[0].chunk is original

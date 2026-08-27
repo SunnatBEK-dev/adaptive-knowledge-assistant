@@ -10,10 +10,11 @@ def make_chunk(
     chunk_id: str,
     content: str,
     index: int = 0,
+    document_id: str = "doc_json_store",
 ) -> Chunk:
     return Chunk(
         id=chunk_id,
-        document_id="doc_json_store",
+        document_id=document_id,
         content=content,
         index=index,
         metadata={"source": "qo‘llanma.txt"},
@@ -194,3 +195,113 @@ def test_store_rejects_invalid_vector(
         )
 
     assert store.count() == 0
+
+
+def test_document_replacement_and_deletion_survive_restart(
+    tmp_path,
+):
+    file_path = tmp_path / "vectors.json"
+    store = JsonVectorStore(file_path)
+    store.add_many([
+        (
+            make_chunk(
+                "chunk_old_one",
+                "Old one",
+                document_id="doc_replace",
+            ),
+            [1.0, 0.0],
+        ),
+        (
+            make_chunk(
+                "chunk_old_two",
+                "Old two",
+                index=1,
+                document_id="doc_replace",
+            ),
+            [0.8, 0.2],
+        ),
+        (
+            make_chunk(
+                "chunk_other",
+                "Other",
+                document_id="doc_other",
+            ),
+            [0.0, 1.0],
+        ),
+    ])
+    replacement = make_chunk(
+        "chunk_replacement",
+        "Replacement",
+        document_id="doc_replace",
+    )
+
+    store.replace_document(
+        "doc_replace",
+        [(replacement, [1.0, 0.0])],
+    )
+    restarted = JsonVectorStore(file_path)
+
+    assert restarted.count() == 2
+    assert {
+        result.chunk.id
+        for result in restarted.search(
+            [1.0, 0.0],
+            k=5,
+        )
+    } == {
+        "chunk_replacement",
+        "chunk_other",
+    }
+    assert restarted.delete_document(
+        "doc_replace"
+    ) == 1
+    assert restarted.delete_document(
+        "doc_replace"
+    ) == 0
+    final_store = JsonVectorStore(file_path)
+    assert final_store.count() == 1
+    assert final_store.search(
+        [0.0, 1.0],
+        k=1,
+    )[0].chunk.id == "chunk_other"
+
+
+def test_document_replacement_rolls_back_on_invalid_vector(
+    tmp_path,
+):
+    file_path = tmp_path / "vectors.json"
+    store = JsonVectorStore(file_path)
+    original = make_chunk(
+        "chunk_original",
+        "Original",
+        document_id="doc_replace",
+    )
+    other = make_chunk(
+        "chunk_other",
+        "Other",
+        document_id="doc_other",
+    )
+    store.add_many([
+        (original, [1.0, 0.0]),
+        (other, [0.0, 1.0]),
+    ])
+
+    with pytest.raises(ValueError, match="dimension"):
+        store.replace_document(
+            "doc_replace",
+            [(
+                make_chunk(
+                    "chunk_invalid",
+                    "Invalid",
+                    document_id="doc_replace",
+                ),
+                [1.0, 0.0, 0.0],
+            )],
+        )
+
+    restarted = JsonVectorStore(file_path)
+    assert restarted.count() == 2
+    assert restarted.search(
+        [1.0, 0.0],
+        k=1,
+    )[0].chunk.id == "chunk_original"
