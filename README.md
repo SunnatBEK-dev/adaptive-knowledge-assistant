@@ -16,6 +16,7 @@ The application architecture foundation is complete through phase 3.12:
 - lazy SentenceTransformer embedding adapter;
 - Document and Chunk retrieval domain models;
 - deterministic character-based TextChunker with overlap;
+- dependency-free cosine similarity and deterministic top-k search;
 - conversation orchestration with rollback behavior;
 - embedding cache persistence;
 - isolated unit tests and opt-in integration tests.
@@ -116,7 +117,6 @@ RUN_ANTHROPIC_INTEGRATION=1 \
 
 The planned Retrieval/RAG sequence continues with:
 
-1. cosine similarity and top-k retrieval;
-2. vector-store and retriever contracts;
-3. retrieval-aware prompt construction;
-4. RAG orchestration and evaluation.
+1. vector-store and retriever contracts;
+2. retrieval-aware prompt construction;
+3. RAG orchestration and evaluation.
