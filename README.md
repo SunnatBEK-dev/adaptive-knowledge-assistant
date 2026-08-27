@@ -13,6 +13,7 @@ The application architecture foundation is complete through phase 3.12:
 - provider-neutral prompt construction;
 - Anthropic/Claude adapter behind an LLM contract;
 - provider-neutral embedding-client contract;
+- lazy SentenceTransformer embedding adapter;
 - conversation orchestration with rollback behavior;
 - embedding cache persistence;
 - isolated unit tests and opt-in integration tests.
@@ -29,6 +30,7 @@ ConversationManager
     |-- Conversation / Message
     |-- PromptBuilder -> LLMMessage
     |-- BaseLLMClient -> ClaudeClient
+    |-- BaseEmbeddingClient -> SentenceTransformerEmbeddingClient
     `-- ConversationRepository -> JsonConversationRepository
 ```
 
@@ -43,6 +45,12 @@ Python 3.10 or newer is required.
 ```bash
 python -m venv .venv
 .venv/bin/python -m pip install -e '.[test]'
+```
+
+Install local SentenceTransformer support only when it is needed:
+
+```bash
+.venv/bin/python -m pip install -e '.[embeddings]'
 ```
 
 `pyproject.toml` is the dependency source of truth. `requirements.txt` and
@@ -106,10 +114,9 @@ RUN_ANTHROPIC_INTEGRATION=1 \
 
 The planned Retrieval/RAG sequence continues with:
 
-1. SentenceTransformer embedding adapter;
-2. document and chunk domain models;
-3. deterministic chunking;
-4. cosine similarity and top-k retrieval;
-5. vector-store and retriever contracts;
-6. retrieval-aware prompt construction;
-7. RAG orchestration and evaluation.
+1. document and chunk domain models;
+2. deterministic chunking;
+3. cosine similarity and top-k retrieval;
+4. vector-store and retriever contracts;
+5. retrieval-aware prompt construction;
+6. RAG orchestration and evaluation.
