@@ -6,7 +6,7 @@ and small abstractions over framework-specific magic.
 
 ## Current status
 
-The application architecture foundation is complete through Tool Calling phase 5.2:
+The application architecture foundation is complete through Agents phase 6.1:
 
 - conversation and message domain models;
 - JSON repository abstraction;
@@ -21,6 +21,8 @@ The application architecture foundation is complete through Tool Calling phase 5
 - Claude tool-use request/response translation;
 - bounded multi-round tool execution with duplicate-call protection;
 - optional tool-enabled conversation and RAG orchestration;
+- provider-neutral `AgentRunner` loop policy;
+- explicit agent state, iteration events, and termination reasons;
 - Anthropic/Claude adapter behind an LLM contract;
 - provider-neutral embedding-client contract;
 - lazy SentenceTransformer embedding adapter;
@@ -61,7 +63,9 @@ again. User-approved durable facts are stored separately and only relevant
 matches are added to a new prompt. The SDK also has an offline-tested tool loop
 that sends registered schemas to Claude, validates every requested call,
 dispatches only explicitly registered Python handlers, and returns structured
-results until Claude produces a final answer.
+results until Claude produces a final answer. The loop policy now lives in a
+provider-neutral agent runtime while Claude only translates one model turn at
+a time.
 
 ## Architecture
 
@@ -73,9 +77,10 @@ RAGConversationManager
     |-- PromptBuilder -> SlidingContextWindow -> LLMMessage
     |                    |-- TokenCounter -> RegexTokenCounter
     |                    `-- ExtractiveConversationSummarizer
-    |-- BaseLLMClient -> ClaudeClient
-    |                    |-- ToolRegistry -> Claude tool schemas
-    |                    `-- tool_use -> ToolExecutor -> tool_result
+    |-- AgentRunner -> AgentState -> AgentEvent
+    |                 |-- ToolRegistry -> ToolExecutor -> ToolResult
+    |                 `-- BaseToolLLMClient -> ClaudeClient (one turn)
+    |-- BaseLLMClient -> ClaudeClient (plain text / streaming)
     |-- BaseEmbeddingClient -> SentenceTransformerEmbeddingClient
     |-- HybridRetriever -> semantic search + BM25 + rank fusion
     |                       `-- BaseVectorStore
@@ -85,7 +90,6 @@ RAGConversationManager
     |-- DirectorySynchronizer -> DocumentIngestor
     |                            `-- BaseDocumentLoader -> TextDocumentLoader
     |-- BaseMemoryStore -> JsonMemoryStore -> BM25 recall
-    |-- ToolRegistry -> ToolExecutor -> ToolResult
     `-- ConversationRepository -> JsonConversationRepository
 ```
 
@@ -183,10 +187,14 @@ handler errors. It does not use dynamic imports, `eval`, or shell execution.
 When a `ToolExecutor` is configured on `ConversationManager` or
 `RAGConversationManager`, Claude may request one or more registered tools in a
 round. Results, including contained validation and execution errors, are sent
-back until Claude returns final text. The loop defaults to at most eight tool
-rounds and rejects duplicate call IDs. Tool traces are transient; persisted
-conversation history contains the original user message and final assistant
-answer. Tool-enabled streaming is intentionally unsupported for now, so use
+back until Claude returns final text. `AgentRunner` defaults to at most eight
+tool rounds and rejects duplicate call IDs. Its returned `AgentState` contains
+ordered `AgentEvent` records and ends with either `final_response` or
+`max_tool_rounds`. Tool traces are transient when using the conversation
+manager; persisted history contains the original user message and final
+assistant answer. Applications that need the trace can invoke
+`AgentRunner.run()` directly and optionally receive each event through a
+callback. Tool-enabled streaming is intentionally unsupported for now, so use
 `send_message()` for this workflow. The SDK does not register application
 tools automatically—the host application owns that allow-list.
 
@@ -235,8 +243,6 @@ RUN_ANTHROPIC_INTEGRATION=1 \
 
 ## Next chapter
 
-The next Agents phase will move loop policy out of the Claude adapter into a
-provider-neutral agent runtime with explicit state, iteration events, and
-termination reasons. That creates the foundation for planning, reflection,
-and later multi-agent coordination without coupling those concepts to one
-model provider.
+The next Agents phase is a small provider-neutral planner with explicit plan
+steps and statuses. It will build on `AgentState` without adding reflection or
+multi-agent coordination until the single-agent planning contract is stable.

@@ -2,6 +2,11 @@ from collections.abc import Iterator
 
 from anthropic import Anthropic
 
+from ai_sdk.agents.model import (
+    AgentEvent,
+    AgentModelResponse,
+    AgentTextBlock,
+)
 from ai_sdk.config import (
     API_KEY,
     MODEL,
@@ -10,8 +15,8 @@ from ai_sdk.config import (
 )
 from ai_sdk.llm.base import BaseToolLLMClient
 from ai_sdk.llm.types import LLMMessage
-from ai_sdk.tools.executor import ToolExecutor
 from ai_sdk.tools.model import ToolCall
+from ai_sdk.tools.schema import ToolSchema
 
 
 class ClaudeClient(BaseToolLLMClient):
@@ -67,33 +72,13 @@ class ClaudeClient(BaseToolLLMClient):
 
         return "".join(parts)
 
-    def ask_with_tools(
+    def complete_tool_turn(
         self,
         messages: list[LLMMessage],
-        executor: ToolExecutor,
-        *,
-        max_tool_rounds: int = 8,
-    ) -> str:
-        """Ask Claude and execute requested tools until final text."""
-        if (
-            not isinstance(max_tool_rounds, int)
-            or isinstance(max_tool_rounds, bool)
-            or max_tool_rounds <= 0
-        ):
-            raise ValueError(
-                "Maximum tool rounds must be greater than zero."
-            )
-
-        if not isinstance(executor, ToolExecutor):
-            raise TypeError(
-                "Tool executor must be a ToolExecutor."
-            )
-
-        schemas = executor.registry.provider_schemas()
-
-        if not schemas:
-            return self.ask(messages)
-
+        schemas: list[ToolSchema],
+        events: tuple[AgentEvent, ...],
+    ) -> AgentModelResponse:
+        """Complete one Claude turn for a provider-neutral agent."""
         provider_messages: list[dict[str, object]] = [
             {
                 "role": message["role"],
@@ -101,56 +86,14 @@ class ClaudeClient(BaseToolLLMClient):
             }
             for message in messages
         ]
-        completed_tool_rounds = 0
-        seen_call_ids: set[str] = set()
 
-        while True:
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=self.max_tokens,
-                messages=provider_messages,
-                tools=schemas,
-            )
-            text_parts, calls, assistant_blocks = (
-                self._parse_tool_response(response.content)
-            )
-
-            if not calls:
-                if getattr(response, "stop_reason", None) == "tool_use":
-                    raise RuntimeError(
-                        "Claude returned tool_use without a tool call."
-                    )
-
-                return "".join(text_parts)
-
-            if completed_tool_rounds >= max_tool_rounds:
-                raise RuntimeError(
-                    "Maximum Claude tool rounds exceeded."
-                )
-
-            call_ids = [call.id for call in calls]
-            duplicate_ids = (
-                len(call_ids) != len(set(call_ids))
-                or any(
-                    call_id in seen_call_ids
-                    for call_id in call_ids
-                )
-            )
-
-            if duplicate_ids:
-                raise RuntimeError(
-                    "Claude returned a duplicate tool call ID."
-                )
-
-            seen_call_ids.update(call_ids)
+        for event in events:
             provider_messages.append({
                 "role": "assistant",
-                "content": assistant_blocks,
+                "content": self._assistant_blocks(
+                    event.response
+                ),
             })
-            results = [
-                executor.execute(call)
-                for call in calls
-            ]
             provider_messages.append({
                 "role": "user",
                 "content": [
@@ -160,27 +103,67 @@ class ClaudeClient(BaseToolLLMClient):
                         "content": result.content,
                         "is_error": result.is_error,
                     }
-                    for result in results
+                    for result in event.tool_results
                 ],
             })
-            completed_tool_rounds += 1
+
+        request: dict[str, object] = {
+            "model": self.model,
+            "max_tokens": self.max_tokens,
+            "messages": provider_messages,
+        }
+
+        if schemas:
+            request["tools"] = [
+                schema.to_json_schema()
+                for schema in schemas
+            ]
+
+        response = self.client.messages.create(**request)
+        parsed = self._parse_agent_response(response.content)
+
+        if (
+            getattr(response, "stop_reason", None) == "tool_use"
+            and not parsed.tool_calls
+        ):
+            raise RuntimeError(
+                "Claude returned tool_use without a tool call."
+            )
+
+        return parsed
 
     @staticmethod
-    def _parse_tool_response(
+    def _assistant_blocks(
+        response: AgentModelResponse,
+    ) -> list[dict[str, object]]:
+        blocks: list[dict[str, object]] = []
+
+        for block in response.blocks:
+            if isinstance(block, AgentTextBlock):
+                blocks.append({
+                    "type": "text",
+                    "text": block.text,
+                })
+            else:
+                blocks.append({
+                    "type": "tool_use",
+                    "id": block.id,
+                    "name": block.name,
+                    "input": block.arguments,
+                })
+
+        return blocks
+
+    @staticmethod
+    def _parse_agent_response(
         blocks: object,
-    ) -> tuple[
-        list[str],
-        list[ToolCall],
-        list[dict[str, object]],
-    ]:
+    ) -> AgentModelResponse:
         if not isinstance(blocks, list):
             raise RuntimeError(
                 "Claude response content must be a list."
             )
 
-        text_parts: list[str] = []
-        calls: list[ToolCall] = []
-        assistant_blocks: list[dict[str, object]] = []
+        parsed_blocks: list[AgentTextBlock | ToolCall] = []
 
         for block in blocks:
             block_type = getattr(block, "type", None)
@@ -193,11 +176,7 @@ class ClaudeClient(BaseToolLLMClient):
                         "Claude text block is invalid."
                     )
 
-                text_parts.append(text)
-                assistant_blocks.append({
-                    "type": "text",
-                    "text": text,
-                })
+                parsed_blocks.append(AgentTextBlock(text))
                 continue
 
             if block_type == "tool_use":
@@ -212,15 +191,9 @@ class ClaudeClient(BaseToolLLMClient):
                         "Claude tool-use block is invalid."
                     ) from error
 
-                calls.append(call)
-                assistant_blocks.append({
-                    "type": "tool_use",
-                    "id": call.id,
-                    "name": call.name,
-                    "input": call.arguments,
-                })
+                parsed_blocks.append(call)
 
-        return text_parts, calls, assistant_blocks
+        return AgentModelResponse(parsed_blocks)
 
     def stream(
         self,
