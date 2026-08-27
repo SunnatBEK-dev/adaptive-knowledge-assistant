@@ -1,5 +1,27 @@
+import pytest
+
 from ai_sdk.context.prompt_builder import PromptBuilder
 from ai_sdk.core.conversation import Conversation
+from ai_sdk.retrieval.chunk import Chunk
+from ai_sdk.retrieval.search import SearchResult
+
+
+def make_result(
+    chunk_id: str,
+    content: str,
+    index: int,
+    score: float,
+) -> SearchResult:
+    return SearchResult(
+        chunk=Chunk(
+            id=chunk_id,
+            document_id="doc_prompt",
+            content=content,
+            index=index,
+            metadata={"source": "private.txt"},
+        ),
+        score=score,
+    )
 
 
 def test_build_messages_preserves_order_without_internal_metadata():
@@ -24,3 +46,60 @@ def test_build_messages_result_does_not_mutate_conversation():
     messages[0]["content"] = "Changed"
 
     assert original.content == "Original"
+
+
+def test_build_messages_augments_latest_user_with_ordered_context():
+    conversation = Conversation()
+    conversation.add_user("Earlier question")
+    conversation.add_assistant("Earlier answer")
+    latest = conversation.add_user("How does it work?")
+    results = [
+        make_result(
+            "chunk_first",
+            "First context",
+            0,
+            0.95,
+        ),
+        make_result(
+            "chunk_second",
+            "Second context",
+            1,
+            0.80,
+        ),
+    ]
+
+    messages = PromptBuilder(conversation).build_messages(
+        retrieval_results=results
+    )
+
+    assert messages[-1] == {
+        "role": "user",
+        "content": (
+            "Retrieved context:\n"
+            "[1]\nFirst context\n\n"
+            "[2]\nSecond context\n\n"
+            "User question:\n"
+            "How does it work?"
+        ),
+    }
+    assert messages[0]["content"] == "Earlier question"
+    assert latest.content == "How does it work?"
+    assert "chunk_first" not in messages[-1]["content"]
+    assert "0.95" not in messages[-1]["content"]
+    assert "private.txt" not in messages[-1]["content"]
+
+
+def test_retrieval_context_requires_user_message():
+    conversation = Conversation()
+    conversation.add_assistant("No question")
+    result = make_result(
+        "chunk_context",
+        "Context",
+        0,
+        1.0,
+    )
+
+    with pytest.raises(RuntimeError, match="user message"):
+        PromptBuilder(conversation).build_messages(
+            retrieval_results=[result]
+        )

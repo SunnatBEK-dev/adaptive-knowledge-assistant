@@ -1,5 +1,7 @@
 import pytest
 
+from ai_sdk.context.prompt_builder import PromptBuilder
+from ai_sdk.core.conversation import Conversation
 from ai_sdk.embeddings.base import BaseEmbeddingClient
 from ai_sdk.retrieval.chunker import TextChunker
 from ai_sdk.retrieval.document import Document
@@ -51,9 +53,26 @@ def test_document_to_semantic_result_workflow():
         "How do Python functions work?",
         k=1,
     )
+    conversation = Conversation()
+    conversation.add_user(
+        "How do Python functions work?"
+    )
+    messages = PromptBuilder(
+        conversation
+    ).build_messages(
+        retrieval_results=results
+    )
 
     assert len(chunks) == 2
     assert results[0].chunk.content == "Python functions"
     assert results[0].chunk.metadata == {
         "source": "guide.txt"
     }
+    assert "Python functions" in messages[-1]["content"]
+    assert (
+        "How do Python functions work?"
+        in messages[-1]["content"]
+    )
+    assert conversation.last_message().content == (
+        "How do Python functions work?"
+    )

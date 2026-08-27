@@ -19,6 +19,7 @@ The application architecture foundation is complete through phase 3.12:
 - dependency-free cosine similarity and deterministic top-k search;
 - provider-neutral VectorStore with an in-memory implementation;
 - SemanticRetriever orchestration for indexing and search;
+- retrieval-aware PromptBuilder without domain-state mutation;
 - conversation orchestration with rollback behavior;
 - embedding cache persistence;
 - isolated unit tests and opt-in integration tests.
@@ -120,5 +121,5 @@ RUN_ANTHROPIC_INTEGRATION=1 \
 
 The planned Retrieval/RAG sequence continues with:
 
-1. retrieval-aware prompt construction;
-2. RAG orchestration and evaluation.
+1. RAG orchestration;
+2. retrieval quality evaluation.
