@@ -14,6 +14,7 @@ from ai_sdk.retrieval.chunk import Chunk
 from ai_sdk.retrieval.search import (
     EmbeddedChunk,
     SearchResult,
+    bm25_search,
     top_k_search,
 )
 from ai_sdk.retrieval.vector_store import (
@@ -136,6 +137,20 @@ class JsonVectorStore(BaseVectorStore):
             raise
 
         return True
+
+    def lexical_search(
+        self,
+        query: str,
+        k: int = 5,
+    ) -> list[SearchResult]:
+        return bm25_search(
+            query=query,
+            candidates=[
+                chunk
+                for chunk, _ in self._items.values()
+            ],
+            k=k,
+        )
 
     def delete_document(
         self,

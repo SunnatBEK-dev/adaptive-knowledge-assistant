@@ -6,7 +6,7 @@ and small abstractions over framework-specific magic.
 
 ## Current status
 
-The application architecture foundation is complete through phase 3.19:
+The application architecture foundation is complete through phase 3.20:
 
 - conversation and message domain models;
 - JSON repository abstraction;
@@ -17,6 +17,8 @@ The application architecture foundation is complete through phase 3.19:
 - Document and Chunk retrieval domain models;
 - deterministic character-based TextChunker with overlap;
 - dependency-free cosine similarity and deterministic top-k search;
+- dependency-free BM25 lexical search;
+- weighted reciprocal-rank fusion for hybrid retrieval;
 - provider-neutral VectorStore with in-memory and persistent JSON adapters;
 - atomic document re-indexing and document-level chunk deletion;
 - SemanticRetriever orchestration for indexing and search;
@@ -36,8 +38,10 @@ The application architecture foundation is complete through phase 3.19:
 The project now has a complete offline-tested RAG pipeline exposed through the
 CLI, deterministic retrieval-quality evaluation, restart-safe local vector
 persistence, document-level index lifecycle, source-aware answers, and a
-loader-based ingestion layer. Directory-backed indexes also remain synchronized
-across application restarts without embedding unchanged files again.
+loader-based ingestion layer. Normal RAG queries now combine semantic
+similarity with exact lexical evidence. Directory-backed indexes also remain
+synchronized across application restarts without embedding unchanged files
+again.
 
 ## Architecture
 
@@ -49,9 +53,10 @@ RAGConversationManager
     |-- PromptBuilder -> LLMMessage
     |-- BaseLLMClient -> ClaudeClient
     |-- BaseEmbeddingClient -> SentenceTransformerEmbeddingClient
-    |-- SemanticRetriever -> BaseVectorStore
-    |                          |-- InMemoryVectorStore
-    |                          `-- JsonVectorStore
+    |-- HybridRetriever -> semantic search + BM25 + rank fusion
+    |                       `-- BaseVectorStore
+    |                           |-- InMemoryVectorStore
+    |                           `-- JsonVectorStore
     |-- Retrieval results -> Citation / RAGResponse
     |-- DirectorySynchronizer -> DocumentIngestor
     |                            `-- BaseDocumentLoader -> TextDocumentLoader
@@ -115,9 +120,10 @@ RAG document commands are:
 Indexing the same file again replaces its old chunks. Indexing a directory
 performs an incremental synchronization: new and changed files are indexed,
 unchanged files are skipped, and documents whose source files disappeared are
-removed. Normal prompts use the most relevant indexed chunks. `/history`,
-`/save`, `/clear`, `/help`, and `/exit` remain available. The first indexing
-run may download the configured SentenceTransformer model.
+removed. Normal prompts combine embedding similarity and exact term matches,
+then use the highest-ranked chunks. `/history`, `/save`, `/clear`, `/help`,
+and `/exit` remain available. The first indexing run may download the
+configured SentenceTransformer model.
 
 The default ingestion layer supports UTF-8 `.txt`, `.md`, `.markdown`, and
 `.rst` files. Directory synchronization scans recursively in deterministic
@@ -126,8 +132,8 @@ owning root directory. `/documents` shows each source path and its current
 chunk count.
 
 After each RAG answer, the CLI prints numbered sources with document ID, chunk
-ID, and similarity score. Local source paths are mapped to citations after the
-model call and are not included in the Claude prompt.
+ID, and fused retrieval score. Local source paths are mapped to citations after
+the model call and are not included in the Claude prompt.
 
 ## Tests
 
@@ -164,6 +170,6 @@ RUN_ANTHROPIC_INTEGRATION=1 \
 
 ## Next chapter
 
-The next Retrieval/RAG phase is richer ingestion: add an optional PDF loader
-with page-aware source metadata and clear per-file reporting for mixed-format
-directories.
+The next step is to compare semantic-only and hybrid retrieval on the existing
+evaluation dataset. Add reranking only if those measurements show a real gap;
+otherwise continue to Memory Systems with a sliding context window.

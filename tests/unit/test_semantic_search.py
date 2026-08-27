@@ -2,7 +2,10 @@ import pytest
 
 from ai_sdk.retrieval.chunk import Chunk
 from ai_sdk.retrieval.search import (
+    SearchResult,
+    bm25_search,
     cosine_similarity,
+    fuse_ranked_results,
     top_k_search,
 )
 
@@ -114,4 +117,101 @@ def test_top_k_search_rejects_non_positive_k():
             query_vector=[1.0],
             candidates=[],
             k=0,
+        )
+
+
+def test_bm25_search_finds_exact_lexical_terms():
+    exact = Chunk(
+        id="chunk_exact",
+        document_id="doc_search",
+        content="Error code ZX-81 means the token expired.",
+        index=0,
+    )
+    generic = Chunk(
+        id="chunk_generic",
+        document_id="doc_search",
+        content="General authentication troubleshooting.",
+        index=1,
+    )
+
+    results = bm25_search(
+        "What causes zx-81?",
+        [generic, exact],
+        k=2,
+    )
+
+    assert [result.chunk for result in results] == [exact]
+    assert results[0].score > 0.0
+
+
+def test_bm25_search_returns_empty_when_terms_do_not_match():
+    assert bm25_search(
+        "unrelated",
+        [make_chunk("chunk_one", 0)],
+    ) == []
+
+
+@pytest.mark.parametrize(
+    ("query", "k", "message"),
+    [
+        (" ", 1, "query"),
+        ("query", 0, "greater than zero"),
+    ],
+)
+def test_bm25_search_rejects_invalid_input(
+    query,
+    k,
+    message,
+):
+    with pytest.raises(ValueError, match=message):
+        bm25_search(query, [], k=k)
+
+
+def test_rank_fusion_combines_semantic_and_lexical_evidence():
+    semantic = make_chunk("chunk_semantic", 0)
+    exact = make_chunk("chunk_exact", 1)
+
+    results = fuse_ranked_results(
+        semantic_results=[
+            SearchResult(semantic, 0.99),
+            SearchResult(exact, 0.20),
+        ],
+        lexical_results=[
+            SearchResult(exact, 4.0),
+        ],
+        semantic_weight=0.7,
+        k=2,
+    )
+
+    assert [result.chunk for result in results] == [
+        exact,
+        semantic,
+    ]
+    assert all(
+        0.0 < result.score <= 1.0
+        for result in results
+    )
+
+
+@pytest.mark.parametrize(
+    ("semantic_weight", "k", "rank_constant", "message"),
+    [
+        (1.1, 1, 60, "weight"),
+        (0.7, 0, 60, "greater than zero"),
+        (0.7, 1, -1, "constant"),
+    ],
+)
+def test_rank_fusion_rejects_invalid_configuration(
+    semantic_weight,
+    k,
+    rank_constant,
+    message,
+):
+    with pytest.raises(ValueError, match=message):
+        fuse_ranked_results(
+            [],
+            [],
+            semantic_weight=semantic_weight,
+            k=k,
+            rank_constant=rank_constant,
         )

@@ -27,8 +27,8 @@ from ai_sdk.ingestion import (
 from ai_sdk.llm.claude import ClaudeClient
 from ai_sdk.retrieval.chunker import TextChunker
 from ai_sdk.retrieval.document import Document
+from ai_sdk.retrieval.hybrid import HybridRetriever
 from ai_sdk.retrieval.json_store import JsonVectorStore
-from ai_sdk.retrieval.retriever import SemanticRetriever
 from ai_sdk.storage.json import (
     JsonConversationRepository,
 )
@@ -127,7 +127,7 @@ def build_manager() -> RAGConversationManager:
             model_name=EMBEDDING_MODEL
         )
     )
-    retriever = SemanticRetriever(
+    retriever = HybridRetriever(
         embedding_client=embedding_client,
         vector_store=JsonVectorStore(
             VECTOR_STORE_FILE

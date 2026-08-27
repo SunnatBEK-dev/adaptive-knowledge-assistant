@@ -50,6 +50,10 @@ def test_store_round_trip_preserves_chunks_and_searches(tmp_path):
         "source": "qo‘llanma.txt"
     }
     assert results[0].score == pytest.approx(1.0)
+    assert restarted.lexical_search(
+        "functions",
+        k=1,
+    )[0].chunk.id == "chunk_python"
     with pytest.raises(ValueError, match="dimension"):
         restarted.search([1.0], k=1)
 

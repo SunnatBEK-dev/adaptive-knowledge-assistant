@@ -46,6 +46,15 @@ class BaseVectorStore(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def lexical_search(
+        self,
+        query: str,
+        k: int = 5,
+    ) -> list[SearchResult]:
+        """Return chunks ranked by exact lexical relevance."""
+        raise NotImplementedError
+
+    @abstractmethod
     def delete(self, chunk_id: str) -> bool:
         raise NotImplementedError
 

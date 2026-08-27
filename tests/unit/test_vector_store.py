@@ -56,6 +56,30 @@ def test_store_replaces_existing_chunk_without_growing():
     )[0].chunk is replacement
 
 
+def test_store_searches_indexed_chunks_lexically():
+    store = InMemoryVectorStore()
+    exact = Chunk(
+        id="chunk_exact",
+        document_id="doc_store",
+        content="Deployment error ZX-81",
+        index=0,
+    )
+    generic = Chunk(
+        id="chunk_generic",
+        document_id="doc_store",
+        content="General deployment guide",
+        index=1,
+    )
+    store.add_many([
+        (generic, [1.0, 0.0]),
+        (exact, [0.0, 1.0]),
+    ])
+
+    results = store.lexical_search("ZX-81", k=1)
+
+    assert results[0].chunk is exact
+
+
 @pytest.mark.parametrize(
     ("vector", "message"),
     [

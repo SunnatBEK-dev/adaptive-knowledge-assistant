@@ -9,6 +9,7 @@ from ai_sdk.retrieval.chunk import Chunk
 from ai_sdk.retrieval.search import (
     EmbeddedChunk,
     SearchResult,
+    bm25_search,
     top_k_search,
 )
 from ai_sdk.retrieval.vector_store import (
@@ -100,6 +101,20 @@ class InMemoryVectorStore(BaseVectorStore):
             self._items = previous_items
             self._dimension = previous_dimension
             raise
+
+    def lexical_search(
+        self,
+        query: str,
+        k: int = 5,
+    ) -> list[SearchResult]:
+        return bm25_search(
+            query=query,
+            candidates=[
+                chunk
+                for chunk, _ in self._items.values()
+            ],
+            k=k,
+        )
 
     def delete(self, chunk_id: str) -> bool:
         if chunk_id not in self._items:
