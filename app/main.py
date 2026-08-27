@@ -9,11 +9,13 @@ from ai_sdk.config import (
     CHAT_FILE,
     CHUNK_OVERLAP,
     CHUNK_SIZE,
+    CONTEXT_TOKEN_BUDGET,
     EMBEDDING_MODEL,
     RETRIEVAL_K,
     VECTOR_STORE_FILE,
 )
 from ai_sdk.context.prompt_builder import PromptBuilder
+from ai_sdk.context.window import SlidingContextWindow
 from ai_sdk.core.conversation import Conversation
 from ai_sdk.embeddings.sentence_transformer import (
     SentenceTransformerEmbeddingClient,
@@ -136,7 +138,12 @@ def build_manager() -> RAGConversationManager:
 
     return RAGConversationManager(
         conversation=conversation,
-        prompt_builder=PromptBuilder(conversation),
+        prompt_builder=PromptBuilder(
+            conversation,
+            context_window=SlidingContextWindow(
+                max_tokens=CONTEXT_TOKEN_BUDGET
+            ),
+        ),
         client=ClaudeClient(),
         repository=repository,
         chunker=TextChunker(

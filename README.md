@@ -6,11 +6,13 @@ and small abstractions over framework-specific magic.
 
 ## Current status
 
-The application architecture foundation is complete through phase 3.21:
+The application architecture foundation is complete through Memory phase 4.1:
 
 - conversation and message domain models;
 - JSON repository abstraction;
 - provider-neutral prompt construction;
+- provider-neutral token counting with a deterministic local estimator;
+- turn-aware sliding context windows with a configurable token budget;
 - Anthropic/Claude adapter behind an LLM contract;
 - provider-neutral embedding-client contract;
 - lazy SentenceTransformer embedding adapter;
@@ -42,8 +44,10 @@ persistence, document-level index lifecycle, source-aware answers, and a
 loader-based ingestion layer. Normal RAG queries combine semantic similarity
 with exact lexical evidence. The evaluation layer can compare this hybrid
 candidate against a semantic baseline and explicitly report improvements or
-regressions. Directory-backed indexes also remain synchronized across
-application restarts without embedding unchanged files again.
+regressions. Long conversations retain their full persisted history while only
+the newest complete turns within the configured token budget are sent to the
+model. Directory-backed indexes also remain synchronized across application
+restarts without embedding unchanged files again.
 
 ## Architecture
 
@@ -52,7 +56,8 @@ app/main.py
     |
 RAGConversationManager
     |-- Conversation / Message
-    |-- PromptBuilder -> LLMMessage
+    |-- PromptBuilder -> SlidingContextWindow -> LLMMessage
+    |                    `-- TokenCounter -> RegexTokenCounter
     |-- BaseLLMClient -> ClaudeClient
     |-- BaseEmbeddingClient -> SentenceTransformerEmbeddingClient
     |-- HybridRetriever -> semantic search + BM25 + rank fusion
@@ -100,6 +105,7 @@ EMBEDDING_MODEL=all-MiniLM-L6-v2
 CHUNK_SIZE=500
 CHUNK_OVERLAP=50
 RETRIEVAL_K=3
+CONTEXT_TOKEN_BUDGET=3000
 ```
 
 Never commit `.env`, API keys, or real conversation data.
@@ -126,6 +132,11 @@ removed. Normal prompts combine embedding similarity and exact term matches,
 then use the highest-ranked chunks. `/history`, `/save`, `/clear`, `/help`,
 and `/exit` remain available. The first indexing run may download the
 configured SentenceTransformer model.
+
+`CONTEXT_TOKEN_BUDGET` limits conversation memory sent to the model. Selection
+keeps complete recent user/assistant turns and always retains the newest turn,
+even when that turn alone exceeds the soft budget. `/history` and JSON
+persistence continue to keep the complete conversation.
 
 The default ingestion layer supports UTF-8 `.txt`, `.md`, `.markdown`, and
 `.rst` files. Directory synchronization scans recursively in deterministic
@@ -172,7 +183,6 @@ RUN_ANTHROPIC_INTEGRATION=1 \
 
 ## Next chapter
 
-The deterministic comparison dataset shows hybrid retrieval improving Hit
-Rate@1, Recall@1, and MRR without a regression. Reranking is therefore deferred
-until a real project dataset demonstrates a gap. The next chapter is Memory
-Systems, starting with a token-aware sliding context window.
+The next Memory Systems phase is summary memory: compress turns that fall
+outside the sliding window so important older context can remain available
+without restoring the entire raw history.

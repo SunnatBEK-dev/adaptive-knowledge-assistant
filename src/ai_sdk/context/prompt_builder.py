@@ -1,6 +1,7 @@
 from collections.abc import Sequence
 
 from ai_sdk.core.conversation import Conversation
+from ai_sdk.context.window import SlidingContextWindow
 from ai_sdk.llm.types import LLMMessage
 from ai_sdk.retrieval.search import SearchResult
 
@@ -10,8 +11,10 @@ class PromptBuilder:
     def __init__(
         self,
         conversation: Conversation,
+        context_window: SlidingContextWindow | None = None,
     ) -> None:
         self.conversation = conversation
+        self.context_window = context_window
 
     def build_messages(
         self,
@@ -32,6 +35,9 @@ class PromptBuilder:
                 messages,
                 retrieval_results,
             )
+
+        if self.context_window is not None:
+            messages = self.context_window.select(messages)
 
         return messages
 

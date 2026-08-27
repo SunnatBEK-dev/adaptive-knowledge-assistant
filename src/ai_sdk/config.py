@@ -41,3 +41,7 @@ CHUNK_OVERLAP = int(
 RETRIEVAL_K = int(
     os.getenv("RETRIEVAL_K", "3")
 )
+
+CONTEXT_TOKEN_BUDGET = int(
+    os.getenv("CONTEXT_TOKEN_BUDGET", "3000")
+)

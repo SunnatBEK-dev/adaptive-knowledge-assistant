@@ -1,6 +1,7 @@
 import pytest
 
 from ai_sdk.context.prompt_builder import PromptBuilder
+from ai_sdk.context.window import SlidingContextWindow
 from ai_sdk.core.conversation import Conversation
 from ai_sdk.retrieval.chunk import Chunk
 from ai_sdk.retrieval.search import SearchResult
@@ -107,3 +108,33 @@ def test_retrieval_context_requires_user_message():
         PromptBuilder(conversation).build_messages(
             retrieval_results=[result]
         )
+
+
+def test_build_messages_applies_context_window_after_retrieval():
+    conversation = Conversation()
+    conversation.add_user("Old question")
+    conversation.add_assistant("Old answer")
+    conversation.add_user("Current question")
+    result = make_result(
+        "chunk_context",
+        "Retrieved knowledge",
+        0,
+        1.0,
+    )
+    builder = PromptBuilder(
+        conversation,
+        context_window=SlidingContextWindow(
+            max_tokens=4,
+            message_overhead=0,
+        ),
+    )
+
+    messages = builder.build_messages(
+        retrieval_results=[result]
+    )
+
+    assert len(messages) == 1
+    assert messages[0]["role"] == "user"
+    assert "Current question" in messages[0]["content"]
+    assert "Retrieved knowledge" in messages[0]["content"]
+    assert "Old question" not in messages[0]["content"]
