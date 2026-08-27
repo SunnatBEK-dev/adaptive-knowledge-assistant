@@ -14,6 +14,7 @@ The application architecture foundation is complete through phase 3.12:
 - Anthropic/Claude adapter behind an LLM contract;
 - provider-neutral embedding-client contract;
 - lazy SentenceTransformer embedding adapter;
+- Document and Chunk retrieval domain models;
 - conversation orchestration with rollback behavior;
 - embedding cache persistence;
 - isolated unit tests and opt-in integration tests.
@@ -114,9 +115,8 @@ RUN_ANTHROPIC_INTEGRATION=1 \
 
 The planned Retrieval/RAG sequence continues with:
 
-1. document and chunk domain models;
-2. deterministic chunking;
-3. cosine similarity and top-k retrieval;
-4. vector-store and retriever contracts;
-5. retrieval-aware prompt construction;
-6. RAG orchestration and evaluation.
+1. deterministic chunking;
+2. cosine similarity and top-k retrieval;
+3. vector-store and retriever contracts;
+4. retrieval-aware prompt construction;
+5. RAG orchestration and evaluation.
