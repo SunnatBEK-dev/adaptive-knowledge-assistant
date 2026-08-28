@@ -30,6 +30,7 @@ The application architecture foundation is complete through evaluation phase
 - bounded reflection for finished agent states and terminal plans;
 - structured reflection verdicts, strengths, and improvements;
 - named agent workers with explicit task assignment;
+- provider-bound worker construction for Anthropic, OpenAI, and Gemini;
 - deterministic multi-agent result collection and failure isolation;
 - stateless MCP `2026-07-28` request metadata;
 - provider-neutral MCP client and transport contracts;
@@ -136,7 +137,7 @@ RAGConversationManager
     |-- PromptBuilder -> SlidingContextWindow -> LLMMessage
     |                    |-- TokenCounter -> RegexTokenCounter
     |                    `-- ExtractiveConversationSummarizer
-    |-- MultiAgentCoordinator -> AgentWorker -> isolated AgentRunner run
+    |-- MultiAgentCoordinator -> AgentWorker(provider) -> isolated AgentRunner
     |-- AgentRunner -> AgentState -> AgentEvent
     |                 |-- ToolRegistry -> ToolExecutor -> ToolResult
     |                 `-- BaseToolLLMClient -> provider adapter
@@ -355,6 +356,40 @@ remain the host application's responsibility. The coordinator does not perform
 automatic delegation, implicit handoffs, shared-state mutation, parallel
 execution, or recursive agent calls.
 
+`create_provider_worker()` binds one named worker to a configured provider and
+creates its isolated `AgentRunner`. Each provider reads its own API key and
+model variables from `.env`; each worker may also receive a different explicit
+tool executor:
+
+```python
+from ai_sdk.agents import (
+    AgentTask,
+    MultiAgentCoordinator,
+    create_provider_worker,
+)
+
+researcher = create_provider_worker(
+    "researcher",
+    "Collect verified facts",
+    "gemini",
+    research_tool_executor,
+)
+writer = create_provider_worker(
+    "writer",
+    "Write a concise final answer",
+    "openai",
+)
+
+coordinator = MultiAgentCoordinator([researcher, writer])
+result = coordinator.run([
+    AgentTask("research", "researcher", "Research Python"),
+    AgentTask("draft", "writer", "Write the draft"),
+])
+```
+
+Provider selection is explicit per worker. There is no automatic fallback,
+load balancing, or hidden cross-provider routing.
+
 `MCPClient` provides the local contract for MCP `2026-07-28`. It has an
 explicit `new -> opening -> open -> failed/closed` transport lifecycle, sends
 protocol version, client identity, and client capabilities with every protocol
@@ -567,8 +602,8 @@ RUN_GEMINI_INTEGRATION=1 \
 
 ## Next chapter
 
-The next core step is assigning different configured providers to named
-multi-agent workers, followed by an explicit routing policy if needed.
-Automatic fallback should only be added with clear retry and cost rules.
-Cost/latency summaries, regression gates, exporters, and persistent
-observability storage remain optional later work.
+The next optional multi-agent step is an explicit routing policy that maps a
+task to a worker without executing hidden delegation. Automatic fallback
+should only be added with clear retry and cost rules. Cost/latency summaries,
+regression gates, exporters, and persistent observability storage remain
+optional later work.

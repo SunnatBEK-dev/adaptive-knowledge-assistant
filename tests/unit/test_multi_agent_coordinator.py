@@ -1,5 +1,6 @@
 import pytest
 
+import ai_sdk.llm.factory as llm_factory_module
 from ai_sdk.agents import (
     AgentModelResponse,
     AgentRunner,
@@ -12,6 +13,7 @@ from ai_sdk.agents import (
     CoordinationError,
     CoordinationResult,
     MultiAgentCoordinator,
+    create_provider_worker,
 )
 from ai_sdk.llm.base import BaseToolLLMClient
 from ai_sdk.tools import (
@@ -226,12 +228,97 @@ def test_coordinator_registers_unique_named_workers():
         coordinator.register(object())
 
 
+def test_provider_worker_factory_binds_provider_and_executor(
+    monkeypatch,
+):
+    client = RecordingClient("Gemini")
+    created_for = []
+
+    def create_client(provider):
+        created_for.append(provider)
+        return client
+
+    monkeypatch.setattr(
+        llm_factory_module,
+        "create_llm_client",
+        create_client,
+    )
+    executor = ToolExecutor(ToolRegistry())
+
+    provider_worker = create_provider_worker(
+        "researcher",
+        "Collect facts",
+        " Gemini ",
+        executor,
+        max_tool_rounds=3,
+    )
+
+    assert created_for == ["gemini"]
+    assert provider_worker.provider == "gemini"
+    assert provider_worker.runner.client is client
+    assert provider_worker.runner.executor is executor
+    assert provider_worker.runner.max_tool_rounds == 3
+
+
+def test_provider_worker_factory_can_use_empty_tool_registry(
+    monkeypatch,
+):
+    client = RecordingClient("OpenAI")
+    monkeypatch.setattr(
+        llm_factory_module,
+        "create_llm_client",
+        lambda provider: client,
+    )
+
+    provider_worker = create_provider_worker(
+        "writer",
+        "Write a draft",
+        "openai",
+    )
+
+    assert provider_worker.provider == "openai"
+    assert provider_worker.runner.executor.registry.count() == 0
+
+
+def test_provider_worker_factory_rejects_invalid_executor(
+    monkeypatch,
+):
+    called = False
+
+    def create_client(provider):
+        nonlocal called
+        called = True
+        return RecordingClient()
+
+    monkeypatch.setattr(
+        llm_factory_module,
+        "create_llm_client",
+        create_client,
+    )
+
+    with pytest.raises(TypeError, match="executor"):
+        create_provider_worker(
+            "worker",
+            "Do work",
+            "anthropic",
+            object(),
+        )
+
+    assert called is False
+
+
 @pytest.mark.parametrize(
     "factory",
     [
         lambda: AgentWorker("bad name", "Role", empty_runner()),
         lambda: AgentWorker("worker", " ", empty_runner()),
         lambda: AgentWorker("worker", "Role", object()),
+        lambda: AgentWorker(
+            "worker",
+            "Role",
+            empty_runner(),
+            provider="bad provider",
+        ),
         lambda: AgentTask("bad id", "worker", "Task"),
         lambda: AgentTask("task", "bad worker", "Task"),
         lambda: AgentTask("task", "worker", " "),

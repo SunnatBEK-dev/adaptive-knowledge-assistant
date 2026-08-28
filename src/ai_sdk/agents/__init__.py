@@ -6,6 +6,7 @@ from ai_sdk.agents.coordination import (
     CoordinationError,
     CoordinationResult,
     MultiAgentCoordinator,
+    create_provider_worker,
 )
 from ai_sdk.agents.model import (
     AgentEvent,
@@ -60,6 +61,7 @@ __all__ = [
     "LLMAgentPlanner",
     "LLMAgentReflector",
     "MultiAgentCoordinator",
+    "create_provider_worker",
     "PlanStatus",
     "PlanStep",
     "PlanValidationError",

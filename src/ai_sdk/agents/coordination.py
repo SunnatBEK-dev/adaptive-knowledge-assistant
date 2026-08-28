@@ -1,11 +1,19 @@
+from __future__ import annotations
+
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
+from typing import TYPE_CHECKING
 
 from ai_sdk.agents.model import AgentStopReason
 from ai_sdk.agents.runner import AgentRunner
 from ai_sdk.agents.state import AgentState
+
+
+if TYPE_CHECKING:
+    from ai_sdk.observability import Tracer
+    from ai_sdk.tools.executor import ToolExecutor
 
 
 class CoordinationError(ValueError):
@@ -22,6 +30,7 @@ class AgentWorker:
     name: str
     description: str
     runner: AgentRunner
+    provider: str | None = None
 
     def __post_init__(self) -> None:
         _validate_identifier(self.name, label="Worker name")
@@ -37,6 +46,17 @@ class AgentWorker:
         if not isinstance(self.runner, AgentRunner):
             raise TypeError(
                 "Worker runner must be an AgentRunner."
+            )
+
+        if self.provider is not None:
+            _validate_identifier(
+                self.provider,
+                label="Worker provider",
+            )
+            object.__setattr__(
+                self,
+                "provider",
+                self.provider.casefold(),
             )
 
         object.__setattr__(
@@ -302,6 +322,47 @@ class MultiAgentCoordinator:
             state=state,
             error=f"Worker stopped: {reason}",
         )
+
+
+def create_provider_worker(
+    name: str,
+    description: str,
+    provider: str,
+    executor: ToolExecutor | None = None,
+    *,
+    max_tool_rounds: int = 8,
+    tracer: Tracer | None = None,
+) -> AgentWorker:
+    """Build a worker bound to one configured LLM provider."""
+    from ai_sdk.llm.factory import (
+        create_llm_client,
+        normalize_llm_provider,
+    )
+    from ai_sdk.tools.executor import ToolExecutor
+    from ai_sdk.tools.registry import ToolRegistry
+
+    normalized_provider = normalize_llm_provider(provider)
+    if executor is not None and not isinstance(
+        executor,
+        ToolExecutor,
+    ):
+        raise TypeError(
+            "Worker executor must be a ToolExecutor."
+        )
+
+    active_executor = executor or ToolExecutor(ToolRegistry())
+    runner = AgentRunner(
+        create_llm_client(normalized_provider),
+        active_executor,
+        max_tool_rounds=max_tool_rounds,
+        tracer=tracer,
+    )
+    return AgentWorker(
+        name=name,
+        description=description,
+        runner=runner,
+        provider=normalized_provider,
+    )
 
 
 def _validate_identifier(name: str, *, label: str) -> None:

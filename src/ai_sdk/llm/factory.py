@@ -5,21 +5,35 @@ from ai_sdk.llm.gemini import GeminiClient
 from ai_sdk.llm.openai import OpenAIClient
 
 
+SUPPORTED_LLM_PROVIDERS = (
+    "anthropic",
+    "openai",
+    "gemini",
+)
+
+
+def normalize_llm_provider(provider: object) -> str:
+    """Validate and normalize a built-in provider name."""
+    if not isinstance(provider, str) or not provider.strip():
+        raise RuntimeError("AI provider is not configured.")
+
+    normalized = provider.strip().casefold()
+    if normalized not in SUPPORTED_LLM_PROVIDERS:
+        raise RuntimeError(
+            f"Unsupported AI provider: {normalized}."
+        )
+    return normalized
+
+
 def create_llm_client(
     provider: str | None = None,
 ) -> BaseToolLLMClient:
     """Create the configured provider adapter."""
     selected = AI_PROVIDER if provider is None else provider
-    if not isinstance(selected, str) or not selected.strip():
-        raise RuntimeError("AI_PROVIDER is not configured.")
-
-    normalized = selected.strip().casefold()
-    if normalized == "anthropic":
-        return ClaudeClient()
-    if normalized == "openai":
-        return OpenAIClient()
-    if normalized == "gemini":
-        return GeminiClient()
-    raise RuntimeError(
-        f"Unsupported AI_PROVIDER: {normalized}."
-    )
+    normalized = normalize_llm_provider(selected)
+    factories = {
+        "anthropic": ClaudeClient,
+        "openai": OpenAIClient,
+        "gemini": GeminiClient,
+    }
+    return factories[normalized]()

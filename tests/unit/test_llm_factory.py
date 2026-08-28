@@ -2,6 +2,7 @@ import pytest
 
 import ai_sdk.llm.factory as factory_module
 from ai_sdk.llm.factory import create_llm_client
+from ai_sdk.llm.factory import normalize_llm_provider
 
 
 def test_factory_creates_selected_provider(monkeypatch):
@@ -39,6 +40,18 @@ def test_factory_uses_environment_provider(monkeypatch):
     )
 
     assert create_llm_client() is expected
+
+
+@pytest.mark.parametrize(
+    ("provider", "expected"),
+    [
+        (" Anthropic ", "anthropic"),
+        ("OPENAI", "openai"),
+        ("Gemini", "gemini"),
+    ],
+)
+def test_provider_name_normalization(provider, expected):
+    assert normalize_llm_provider(provider) == expected
 
 
 @pytest.mark.parametrize("provider", ["", "unknown", 42])

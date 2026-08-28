@@ -1,13 +1,13 @@
 import pytest
 
+import ai_sdk.llm.factory as llm_factory_module
 from ai_sdk.agents import (
     AgentModelResponse,
-    AgentRunner,
     AgentTask,
     AgentTaskStatus,
     AgentTextBlock,
-    AgentWorker,
     MultiAgentCoordinator,
+    create_provider_worker,
 )
 from ai_sdk.llm.base import BaseToolLLMClient
 from ai_sdk.tools import (
@@ -37,7 +37,9 @@ class ScriptedWorkerClient(BaseToolLLMClient):
         return self.responses.pop(0)
 
 
-def test_named_workers_produce_isolated_ordered_results():
+def test_named_provider_workers_produce_isolated_ordered_results(
+    monkeypatch,
+):
     registry = ToolRegistry()
     registry.register(
         ToolSchema(
@@ -53,36 +55,46 @@ def test_named_workers_produce_isolated_ordered_results():
         ),
         lambda topic: {"topic": topic, "fact": "verified"},
     )
-    researcher = AgentWorker(
+    clients = {
+        "gemini": ScriptedWorkerClient([
+            AgentModelResponse([
+                ToolCall(
+                    "call_lookup",
+                    "lookup",
+                    {"topic": "Python"},
+                ),
+            ]),
+            AgentModelResponse([
+                AgentTextBlock("Research complete"),
+            ]),
+        ]),
+        "openai": ScriptedWorkerClient([
+            AgentModelResponse([
+                AgentTextBlock("Draft complete"),
+            ]),
+        ]),
+    }
+    created_for = []
+
+    def create_client(provider):
+        created_for.append(provider)
+        return clients[provider]
+
+    monkeypatch.setattr(
+        llm_factory_module,
+        "create_llm_client",
+        create_client,
+    )
+    researcher = create_provider_worker(
         "researcher",
         "Collect verified facts",
-        AgentRunner(
-            ScriptedWorkerClient([
-                AgentModelResponse([
-                    ToolCall(
-                        "call_lookup",
-                        "lookup",
-                        {"topic": "Python"},
-                    ),
-                ]),
-                AgentModelResponse([
-                    AgentTextBlock("Research complete"),
-                ]),
-            ]),
-            ToolExecutor(registry),
-        ),
+        "gemini",
+        ToolExecutor(registry),
     )
-    writer = AgentWorker(
+    writer = create_provider_worker(
         "writer",
         "Write concise text",
-        AgentRunner(
-            ScriptedWorkerClient([
-                AgentModelResponse([
-                    AgentTextBlock("Draft complete"),
-                ]),
-            ]),
-            ToolExecutor(ToolRegistry()),
-        ),
+        "openai",
     )
     coordinator = MultiAgentCoordinator([
         researcher,
@@ -112,6 +124,9 @@ def test_named_workers_produce_isolated_ordered_results():
     ]
     assert result.results[0].state.tool_rounds == 1
     assert result.results[1].state.tool_rounds == 0
+    assert created_for == ["gemini", "openai"]
+    assert researcher.provider == "gemini"
+    assert writer.provider == "openai"
     assert (
         result.results[0].state
         is not result.results[1].state
