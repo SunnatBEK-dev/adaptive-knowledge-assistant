@@ -7,8 +7,10 @@ from ai_sdk.agents import (
     AgentRunner,
     AgentStopReason,
     AgentTextBlock,
+    LLMAgentReflector,
     LLMAgentPlanner,
     PlanStatus,
+    ReflectionVerdict,
 )
 from ai_sdk.llm.base import (
     BaseLLMClient,
@@ -34,6 +36,19 @@ class PlanningClient(BaseLLMClient):
                 "Double 2",
                 "Double 3",
             ],
+        })
+
+    def stream(self, messages):
+        yield self.ask(messages)
+
+
+class ReviewClient(BaseLLMClient):
+    def ask(self, messages):
+        return json.dumps({
+            "verdict": "passed",
+            "summary": "Both plan steps completed.",
+            "strengths": ["All outcomes are present"],
+            "improvements": [],
         })
 
     def stream(self, messages):
@@ -99,3 +114,10 @@ def test_plan_steps_can_be_executed_by_agent_runner():
 
     assert executions == [2, 3]
     assert [step.outcome for step in plan.steps] == ["4", "6"]
+
+    reflection = LLMAgentReflector(
+        ReviewClient()
+    ).reflect_plan(plan)
+
+    assert reflection.verdict is ReflectionVerdict.PASSED
+    assert reflection.summary == "Both plan steps completed."

@@ -15,6 +15,13 @@ from ai_sdk.agents.planner import (
     BaseAgentPlanner,
     LLMAgentPlanner,
 )
+from ai_sdk.agents.reflection import (
+    AgentReflection,
+    BaseAgentReflector,
+    LLMAgentReflector,
+    ReflectionValidationError,
+    ReflectionVerdict,
+)
 from ai_sdk.agents.runner import (
     AgentEventHandler,
     AgentRunner,
@@ -24,6 +31,7 @@ from ai_sdk.agents.state import AgentState
 
 __all__ = [
     "AgentPlan",
+    "AgentReflection",
     "AgentEvent",
     "AgentEventHandler",
     "AgentModelResponse",
@@ -33,8 +41,12 @@ __all__ = [
     "AgentStopReason",
     "AgentTextBlock",
     "BaseAgentPlanner",
+    "BaseAgentReflector",
     "LLMAgentPlanner",
+    "LLMAgentReflector",
     "PlanStatus",
     "PlanStep",
     "PlanValidationError",
+    "ReflectionValidationError",
+    "ReflectionVerdict",
 ]

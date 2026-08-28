@@ -6,7 +6,7 @@ and small abstractions over framework-specific magic.
 
 ## Current status
 
-The application architecture foundation is complete through Agents phase 6.2:
+The application architecture foundation is complete through Agents phase 6.3:
 
 - conversation and message domain models;
 - JSON repository abstraction;
@@ -25,6 +25,8 @@ The application architecture foundation is complete through Agents phase 6.2:
 - explicit agent state, iteration events, and termination reasons;
 - provider-neutral LLM planner with strict bounded JSON output;
 - ordered plan steps with controlled status transitions and outcomes;
+- bounded reflection for finished agent states and terminal plans;
+- structured reflection verdicts, strengths, and improvements;
 - Anthropic/Claude adapter behind an LLM contract;
 - provider-neutral embedding-client contract;
 - lazy SentenceTransformer embedding adapter;
@@ -83,6 +85,7 @@ RAGConversationManager
     |                 |-- ToolRegistry -> ToolExecutor -> ToolResult
     |                 `-- BaseToolLLMClient -> ClaudeClient (one turn)
     |-- LLMAgentPlanner -> AgentPlan -> PlanStep
+    |-- LLMAgentReflector -> AgentReflection
     |-- BaseLLMClient -> ClaudeClient (plain text / streaming)
     |-- BaseEmbeddingClient -> SentenceTransformerEmbeddingClient
     |-- HybridRetriever -> semantic search + BM25 + rank fusion
@@ -209,6 +212,15 @@ outcome stored for each completed step. Planning does not automatically execute
 steps or re-plan: the host application explicitly passes each active step to
 `AgentRunner`, which keeps planning policy separate from tool execution.
 
+`LLMAgentReflector` performs one opt-in review of a finished `AgentState` or a
+completed/failed `AgentPlan`. It returns a strict verdict (`passed`,
+`needs_improvement`, or `failed`) plus bounded lists of strengths and
+improvements. Reflection never mutates the reviewed object, executes tools,
+retries work, or applies its own suggestions. Snapshot input is capped and may
+be truncated; because it is sent to the configured LLM provider, host
+applications should not include secrets in state, plan outcomes, or tool
+results.
+
 The default ingestion layer supports UTF-8 `.txt`, `.md`, `.markdown`, and
 `.rst` files. Directory synchronization scans recursively in deterministic
 path order, skips unsupported formats, and persists content hashes plus the
@@ -254,7 +266,7 @@ RUN_ANTHROPIC_INTEGRATION=1 \
 
 ## Next chapter
 
-The next Agents phase is bounded reflection over an `AgentState` or completed
-`AgentPlan`. Reflection will produce structured feedback without silently
-retrying work or mutating the original run; automatic retries and multi-agent
-coordination remain later concerns.
+The next Agents phase is minimal multi-agent coordination: named workers,
+isolated runs, explicit task assignment, and deterministic result collection.
+Shared mutable state, automatic delegation, and agent-to-agent recursion will
+remain out of scope until the coordinator contract is stable.
