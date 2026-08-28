@@ -16,6 +16,8 @@ from ai_sdk.agents.model import (
     AgentTextBlock,
 )
 from ai_sdk.agents.handoff import (
+    DependencyHandoffCoordinator,
+    DependencyHandoffResult,
     HandoffOutputFormat,
     HandoffPayload,
     HandoffResult,
@@ -66,6 +68,8 @@ __all__ = [
     "BaseAgentReflector",
     "CoordinationError",
     "CoordinationResult",
+    "DependencyHandoffCoordinator",
+    "DependencyHandoffResult",
     "HandoffOutputFormat",
     "HandoffPayload",
     "HandoffResult",

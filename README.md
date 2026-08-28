@@ -35,6 +35,8 @@ The application architecture foundation is complete through evaluation phase
 - explicit Direct Chat and Super AI application modes;
 - provider-isolated Direct Chat conversation histories;
 - validated, bounded structured handoffs between named provider workers;
+- deterministic dependency-graph validation and topological execution;
+- failed-branch pruning with independent-stage continuation;
 - a composite Super AI client that returns one final response;
 - stateless MCP `2026-07-28` request metadata;
 - provider-neutral MCP client and transport contracts;
@@ -142,7 +144,7 @@ validated JSON handoffs and one persisted final answer.
 app/main.py -> ApplicationMode
     |-- Direct Chat -> RAGConversationManager -> selected provider client
     `-- Super AI -> RAGConversationManager -> SuperAIClient
-                                            `-- SequentialHandoffCoordinator
+                                            `-- DependencyHandoffCoordinator
                                                 |-- Gemini context worker
                                                 |-- Claude reasoning worker
                                                 `-- OpenAI synthesis worker
@@ -154,6 +156,7 @@ RAGConversationManager
     |                    `-- ExtractiveConversationSummarizer
     |-- MultiAgentCoordinator -> AgentWorker(provider) -> isolated AgentRunner
     |-- SequentialHandoffCoordinator -> ordered, bounded stage outputs
+    |-- DependencyHandoffCoordinator -> validated DAG -> declared inputs
     |-- AgentRunner -> AgentState -> AgentEvent
     |                 |-- ToolRegistry -> ToolExecutor -> ToolResult
     |                 `-- BaseToolLLMClient -> provider adapter
@@ -295,10 +298,11 @@ The CLI asks for an application mode at startup:
 Both modes use the same conversation, RAG, document, and long-term-memory
 features. Super AI stores its final conversation in `data/super_ai_chat.json`.
 The context and reasoning stages must return exactly four validated fields:
-`summary`, `facts`, `uncertainties`, and `recommendations`. Only the latest
-bounded payload is passed to the next stage as untrusted JSON data. The final
-stage returns ordinary user-facing text. Intermediate payloads are not added
-to the user-visible conversation history.
+`summary`, `facts`, `uncertainties`, and `recommendations`. Each stage receives
+only its explicitly declared, bounded dependency payloads as untrusted JSON
+data. The final stage depends on both context and reasoning, then returns
+ordinary user-facing text. Intermediate payloads are not added to the
+user-visible conversation history.
 
 Direct Chat needs only the selected provider's API key and normally makes one
 model request per ordinary chat turn. Super AI needs valid Gemini, Anthropic,
@@ -409,6 +413,15 @@ outputs fail the stage before another provider runs. The next stage receives
 the latest validated payload plus the original request. This makes the Super AI
 flow explicit and testable without giving agents permission to delegate or
 call one another recursively.
+
+`DependencyHandoffCoordinator` adds an explicit directed acyclic graph. Each
+stage names its required stage IDs through `depends_on`; declaration order does
+not control execution. Unknown dependencies and cycles are rejected before any
+provider call, then ready stages run in deterministic topological order. A
+failed stage blocks only its dependent descendants, while unrelated ready
+stages may continue. Dependency payloads are combined into bounded untrusted
+JSON; an oversized dependency input fails before the target worker runs. Ready
+stages are still executed sequentially in this phase, not in parallel.
 
 `create_provider_worker()` binds one named worker to a configured provider and
 creates its isolated `AgentRunner`. Each provider reads its own API key and
@@ -656,9 +669,8 @@ RUN_GEMINI_INTEGRATION=1 \
 
 ## Next chapter
 
-The next core step is dependency-aware workflow execution. After that, a
-deterministic capability router can choose an appropriate workflow or provider
-without hidden delegation. Automatic fallback should only be added with clear
-retry, quality, and cost rules. Super AI streaming, cost/latency summaries,
-regression gates, exporters, and persistent observability storage remain
-optional later work.
+The next core step is a deterministic capability router that chooses an
+appropriate workflow or provider without hidden delegation. Automatic fallback
+should only be added with clear retry, quality, and cost rules. Parallel ready
+stages, Super AI streaming, cost/latency summaries, regression gates,
+exporters, and persistent observability storage remain optional later work.

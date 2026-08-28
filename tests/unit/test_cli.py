@@ -17,6 +17,7 @@ from ai_sdk.agents import (
     AgentRunner,
     AgentTextBlock,
     AgentWorker,
+    DependencyHandoffCoordinator,
     HandoffOutputFormat,
 )
 from ai_sdk.application import ApplicationMode
@@ -219,6 +220,10 @@ def test_super_ai_builder_configures_three_provider_stages(
     assert providers == ["gemini", "anthropic", "openai"]
     assert received["conversation_file"] == chat_file
     assert isinstance(received["client"], SuperAIClient)
+    assert isinstance(
+        received["client"].workflow,
+        DependencyHandoffCoordinator,
+    )
     assert [
         stage.output_format
         for stage in received["client"].workflow.stages
@@ -226,4 +231,12 @@ def test_super_ai_builder_configures_three_provider_stages(
         HandoffOutputFormat.STRUCTURED,
         HandoffOutputFormat.STRUCTURED,
         HandoffOutputFormat.TEXT,
+    ]
+    assert [
+        stage.depends_on
+        for stage in received["client"].workflow.stages
+    ] == [
+        (),
+        ("context",),
+        ("context", "reasoning"),
     ]

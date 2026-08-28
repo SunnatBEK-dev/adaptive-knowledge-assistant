@@ -7,10 +7,10 @@ from ai_sdk.application.rag_manager import (
 from ai_sdk.application.rag_response import Citation
 from ai_sdk.application.modes import ApplicationMode
 from ai_sdk.agents import (
+    DependencyHandoffCoordinator,
     HandoffOutputFormat,
     HandoffStage,
     MultiAgentCoordinator,
-    SequentialHandoffCoordinator,
     create_provider_worker,
 )
 from ai_sdk.config import (
@@ -260,7 +260,7 @@ def build_super_ai_manager(
         "Produce one clear final answer for the user",
         "openai",
     )
-    workflow = SequentialHandoffCoordinator(
+    workflow = DependencyHandoffCoordinator(
         MultiAgentCoordinator([
             context_worker,
             reasoning_worker,
@@ -281,12 +281,14 @@ def build_super_ai_manager(
                 "Identify contradictions and a sound solution. "
                 "Carry forward every useful verified fact.",
                 output_format=HandoffOutputFormat.STRUCTURED,
+                depends_on=("context",),
             ),
             HandoffStage(
                 "final",
                 "synthesizer",
                 "Create the final answer from verified useful points. "
                 "Do not mention internal stages unless needed.",
+                depends_on=("context", "reasoning"),
             ),
         ],
     )

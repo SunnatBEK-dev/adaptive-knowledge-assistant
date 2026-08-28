@@ -7,10 +7,10 @@ from ai_sdk.agents import (
     AgentRunner,
     AgentTextBlock,
     AgentWorker,
+    DependencyHandoffCoordinator,
     HandoffOutputFormat,
     HandoffStage,
     MultiAgentCoordinator,
-    SequentialHandoffCoordinator,
 )
 from ai_sdk.application.conversation_manager import ConversationManager
 from ai_sdk.context.prompt_builder import PromptBuilder
@@ -81,7 +81,7 @@ def test_super_ai_combines_providers_and_persists_final_answer(
         stage_worker("reasoner", claude, "anthropic"),
         stage_worker("writer", openai, "openai"),
     ]
-    workflow = SequentialHandoffCoordinator(
+    workflow = DependencyHandoffCoordinator(
         MultiAgentCoordinator(workers),
         [
             HandoffStage(
@@ -95,8 +95,14 @@ def test_super_ai_combines_providers_and_persists_final_answer(
                 "reasoner",
                 "Analyze facts",
                 output_format=HandoffOutputFormat.STRUCTURED,
+                depends_on=("context",),
             ),
-            HandoffStage("final", "writer", "Write answer"),
+            HandoffStage(
+                "final",
+                "writer",
+                "Write answer",
+                depends_on=("context", "reason"),
+            ),
         ],
     )
     repository = JsonConversationRepository(
@@ -121,4 +127,4 @@ def test_super_ai_combines_providers_and_persists_final_answer(
     assert "Extracted facts" in claude.prompts[0]
     assert "Reasoned solution" in openai.prompts[0]
     assert "Use the solution" in openai.prompts[0]
-    assert "Previous structured handoff" in openai.prompts[0]
+    assert "Required dependency handoffs" in openai.prompts[0]

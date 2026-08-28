@@ -1,6 +1,7 @@
 from collections.abc import Iterator
 
 from ai_sdk.agents.handoff import (
+    DependencyHandoffCoordinator,
     HandoffResult,
     SequentialHandoffCoordinator,
 )
@@ -13,11 +14,17 @@ class SuperAIClient(BaseLLMClient):
 
     def __init__(
         self,
-        workflow: SequentialHandoffCoordinator,
+        workflow: (
+            SequentialHandoffCoordinator
+            | DependencyHandoffCoordinator
+        ),
     ) -> None:
         if not isinstance(
             workflow,
-            SequentialHandoffCoordinator,
+            (
+                SequentialHandoffCoordinator,
+                DependencyHandoffCoordinator,
+            ),
         ):
             raise TypeError(
                 "Super AI workflow is invalid."
