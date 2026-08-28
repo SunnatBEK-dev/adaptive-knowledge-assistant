@@ -8,6 +8,11 @@ from ai_sdk.agents.model import (
 from ai_sdk.agents.state import AgentState
 from ai_sdk.llm.base import BaseToolLLMClient
 from ai_sdk.llm.types import LLMMessage
+from ai_sdk.observability import (
+    TraceCategory,
+    Tracer,
+    trace_span,
+)
 from ai_sdk.tools.executor import ToolExecutor
 
 
@@ -23,6 +28,7 @@ class AgentRunner:
         executor: ToolExecutor,
         *,
         max_tool_rounds: int = 8,
+        tracer: Tracer | None = None,
     ) -> None:
         if not isinstance(client, BaseToolLLMClient):
             raise TypeError(
@@ -42,12 +48,47 @@ class AgentRunner:
             raise ValueError(
                 "Maximum tool rounds must be greater than zero."
             )
+        if tracer is not None and not isinstance(tracer, Tracer):
+            raise TypeError("Agent tracer must be a Tracer.")
 
         self.client = client
         self.executor = executor
         self.max_tool_rounds = max_tool_rounds
+        self.tracer = tracer or executor.tracer
 
     def run(
+        self,
+        messages: list[LLMMessage],
+        *,
+        on_event: AgentEventHandler | None = None,
+    ) -> AgentState:
+        with trace_span(
+            self.tracer,
+            "agent.run",
+            TraceCategory.AGENT,
+            {
+                "agent.message_count": len(messages),
+                "agent.max_tool_rounds": self.max_tool_rounds,
+            },
+        ) as span:
+            state = self._run(messages, on_event=on_event)
+            if span is not None:
+                span.set_attribute(
+                    "agent.tool_round_count",
+                    state.tool_rounds,
+                )
+                span.set_attribute(
+                    "agent.stop_reason",
+                    state.stop_reason.value,
+                )
+                if (
+                    state.stop_reason
+                    is AgentStopReason.MAX_TOOL_ROUNDS
+                ):
+                    span.set_error("MaxToolRoundsExceeded")
+            return state
+
+    def _run(
         self,
         messages: list[LLMMessage],
         *,
@@ -61,11 +102,29 @@ class AgentRunner:
         seen_call_ids: set[str] = set()
 
         while True:
-            response = self.client.complete_tool_turn(
-                state.messages,
-                schemas,
-                tuple(state.events),
-            )
+            with trace_span(
+                self.tracer,
+                "llm.tool_turn",
+                TraceCategory.LLM,
+                {
+                    "llm.message_count": len(state.messages),
+                    "llm.tool_schema_count": len(schemas),
+                    "llm.prior_event_count": len(state.events),
+                },
+            ) as model_span:
+                response = self.client.complete_tool_turn(
+                    state.messages,
+                    schemas,
+                    tuple(state.events),
+                )
+                if model_span is not None and isinstance(
+                    response,
+                    AgentModelResponse,
+                ):
+                    model_span.set_attribute(
+                        "llm.tool_call_count",
+                        len(response.tool_calls),
+                    )
 
             if not isinstance(response, AgentModelResponse):
                 raise TypeError(
@@ -99,7 +158,7 @@ class AgentRunner:
                 return state
 
             results = tuple(
-                self.executor.execute(call)
+                self.executor.execute(call, tracer=self.tracer)
                 for call in calls
             )
             event = AgentEvent(

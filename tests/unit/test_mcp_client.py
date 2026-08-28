@@ -1,5 +1,10 @@
 import pytest
 
+from ai_sdk.observability import (
+    InMemoryTraceCollector,
+    TraceStatus,
+    Tracer,
+)
 from ai_sdk.mcp import (
     CLIENT_CAPABILITIES_META_KEY,
     CLIENT_INFO_META_KEY,
@@ -452,6 +457,31 @@ def test_transport_failure_does_not_expose_exception_message():
     assert "RuntimeError" in str(caught.value)
     assert "secret-token" not in str(caught.value)
     assert client.state is MCPConnectionState.FAILED
+
+
+def test_mcp_request_tracing_records_operation_without_remote_data():
+    collector = InMemoryTraceCollector()
+    tracer = Tracer(collector)
+    transport = RecordingTransport()
+    client = make_client(transport, tracer=tracer)
+    client.open()
+
+    page = client.list_tools()
+    transport.tools_result = RuntimeError("private bearer token")
+    with pytest.raises(MCPTransportError):
+        client.list_tools()
+
+    success, failure = collector.records()
+    assert page.tools
+    assert success.name == failure.name == "mcp.request"
+    assert success.attributes == {
+        "mcp.operation": "tools/list",
+        "mcp.input_required": False,
+    }
+    assert success.status is TraceStatus.OK
+    assert failure.status is TraceStatus.ERROR
+    assert failure.error_type == "MCPTransportError"
+    assert "private bearer token" not in str(failure.to_dict())
 
 
 @pytest.mark.parametrize(

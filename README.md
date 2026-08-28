@@ -6,8 +6,8 @@ and small abstractions over framework-specific magic.
 
 ## Current status
 
-The application architecture foundation is complete through Agents and MCP
-phase 8.4:
+The application architecture foundation is complete through observability
+phase 9.1:
 
 - conversation and message domain models;
 - JSON repository abstraction;
@@ -48,6 +48,11 @@ phase 8.4:
 - manual MCP multi round-trip continuations for tools and resources;
 - opaque request-state echoing with fresh JSON-RPC request identifiers;
 - exact input-response matching, one-use continuations, and bounded rounds;
+- provider-neutral trace and span records with validated identifiers;
+- nested parent-child trace context for workflows and operations;
+- bounded, thread-safe in-memory trace collection;
+- opt-in tracing across LLM, retrieval, tool, agent, and MCP operations;
+- safe trace metadata with sensitive-field redaction and error types only;
 - Anthropic/Claude adapter behind an LLM contract;
 - provider-neutral embedding-client contract;
 - lazy SentenceTransformer embedding adapter;
@@ -100,7 +105,11 @@ framing, and obtains authorization immediately before each request.
 When a tool call or resource read needs host input, the SDK returns a local
 continuation instead of answering automatically. The host can inspect the
 requested interaction, gather an approved response, resume it once, or cancel
-it locally.
+it locally. Phase 9.1 adds optional tracing to the main workflow boundaries.
+Components that share one `Tracer` produce a single parent-child operation
+tree with bounded timing, status, counts, and exception type metadata. Raw
+prompts, model responses, tool arguments, credentials, and MCP request state
+are not collected by the built-in instrumentation.
 
 ## Architecture
 
@@ -141,6 +150,9 @@ MCPClient -> MCPRequestContext
 
 MCPToolAdapter -> approved compatible MCPTool -> ToolRegistry
     `-- ToolExecutor -> MCPClient.call_tool
+
+Tracer -> TraceCollector -> InMemoryTraceCollector
+    `-- TraceRecord (trace/span IDs, parent, timing, status, safe attributes)
 ```
 
 The domain layer does not know about JSON, filesystem paths, Anthropic, API
@@ -348,6 +360,42 @@ automatic pagination/discovery, legacy MCP protocol fallback, subscriptions,
 or automatic multi round-trip fulfillment. The authorization callback lets
 the host own credential refresh without exposing secrets to the SDK.
 
+## Tracing
+
+Tracing is opt-in. Create one collector and tracer, then pass the same tracer
+to the top-level manager or lower-level component that should be observed:
+
+```python
+from ai_sdk.observability import InMemoryTraceCollector, Tracer
+
+collector = InMemoryTraceCollector(max_records=1000)
+tracer = Tracer(collector)
+
+manager = RAGConversationManager(
+    conversation=conversation,
+    prompt_builder=prompt_builder,
+    client=llm_client,
+    repository=repository,
+    chunker=chunker,
+    retriever=retriever,
+    tracer=tracer,
+)
+response = manager.send_message("question")
+
+for record in collector.records():
+    print(record.to_dict())
+```
+
+The built-in instrumentation records operation names, parent-child
+relationships, elapsed time, outcome status, safe counts, and exception class
+names. It does not record exception messages or application content. Attribute
+names associated with prompts, content, credentials, tokens, tool arguments,
+and MCP state are redacted; custom instrumentation must still use deliberate,
+non-sensitive attribute names. Records stay in the bounded in-memory collector
+unless the host supplies another `TraceCollector` implementation. This phase
+does not yet include remote trace propagation, sampling, an OpenTelemetry
+exporter, metrics, logs, or persistent trace reports.
+
 The default ingestion layer supports UTF-8 `.txt`, `.md`, `.markdown`, and
 `.rst` files. Directory synchronization scans recursively in deterministic
 path order, skips unsupported formats, and persists content hashes plus the
@@ -393,8 +441,8 @@ RUN_ANTHROPIC_INTEGRATION=1 \
 
 ## Next chapter
 
-Phase 9.1 will introduce a provider-neutral trace model for LLM, retrieval,
-tool, agent, and MCP operations. Traces will record bounded timing and outcome
-metadata while keeping prompt contents, credentials, and remote state out by
-default. Subscriptions, legacy MCP fallback, and automatic OAuth flows remain
-optional integrations rather than core requirements.
+Phase 9.2 will add a small provider-neutral evaluation harness: explicit eval
+cases, deterministic evaluator contracts, pass/fail criteria, and aggregate
+quality reports. Cost and latency summaries, regression gates, exporters, and
+persistent observability storage remain later opt-in layers rather than core
+runtime requirements.

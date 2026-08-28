@@ -10,6 +10,11 @@ from ai_sdk.core.conversation import Conversation
 from ai_sdk.llm.base import BaseLLMClient
 from ai_sdk.llm.types import LLMMessage
 from ai_sdk.memory.base import BaseMemoryStore
+from ai_sdk.observability import (
+    TraceCategory,
+    Tracer,
+    trace_span,
+)
 from ai_sdk.retrieval.chunk import Chunk
 from ai_sdk.retrieval.catalog import IndexedDocument
 from ai_sdk.retrieval.chunker import TextChunker
@@ -37,6 +42,7 @@ class RAGConversationManager(ConversationManager):
         memory_retrieval_k: int = 3,
         tool_executor: ToolExecutor | None = None,
         max_tool_rounds: int = 8,
+        tracer: Tracer | None = None,
     ) -> None:
         if retrieval_k <= 0:
             raise ValueError(
@@ -52,6 +58,7 @@ class RAGConversationManager(ConversationManager):
             memory_retrieval_k=memory_retrieval_k,
             tool_executor=tool_executor,
             max_tool_rounds=max_tool_rounds,
+            tracer=tracer,
         )
         self.chunker = chunker
         self.retriever = retriever
@@ -114,10 +121,21 @@ class RAGConversationManager(ConversationManager):
                 memory_results=memory_results
             )
 
-        retrieval_results = self.retriever.retrieve(
-            query=text,
-            k=self.retrieval_k,
-        )
+        with trace_span(
+            self.tracer,
+            "retrieval.search",
+            TraceCategory.RETRIEVAL,
+            {"retrieval.k": self.retrieval_k},
+        ) as span:
+            retrieval_results = self.retriever.retrieve(
+                query=text,
+                k=self.retrieval_k,
+            )
+            if span is not None:
+                span.set_attribute(
+                    "retrieval.result_count",
+                    len(retrieval_results),
+                )
 
         messages = self.prompt_builder.build_messages(
             retrieval_results=retrieval_results,

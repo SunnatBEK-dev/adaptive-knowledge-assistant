@@ -2,6 +2,11 @@ import json
 
 import pytest
 
+from ai_sdk.observability import (
+    InMemoryTraceCollector,
+    TraceStatus,
+    Tracer,
+)
 from ai_sdk.tools import (
     ToolCall,
     ToolExecutor,
@@ -175,3 +180,43 @@ def test_executor_preserves_plain_string_output():
     ))
 
     assert result.content == "done"
+
+
+def test_executor_traces_safe_success_and_contained_error_metadata():
+    collector = InMemoryTraceCollector()
+    tracer = Tracer(collector)
+    registry = ToolRegistry()
+    registry.register(make_schema(), lambda left, right: left + right)
+    executor = ToolExecutor(registry, tracer=tracer)
+
+    success = executor.execute(
+        ToolCall("call_ok", "add", {"left": 1, "right": 2})
+    )
+    failure = executor.execute(
+        ToolCall("call_bad", "add", {"left": "secret", "right": 2})
+    )
+
+    first, second = collector.records()
+    assert not success.is_error
+    assert failure.is_error
+    assert first.name == second.name == "tool.execute"
+    assert first.attributes == {
+        "tool.name": "add",
+        "tool.is_error": False,
+    }
+    assert first.status is TraceStatus.OK
+    assert second.status is TraceStatus.ERROR
+    assert second.error_type == "ToolExecutionError"
+    assert "secret" not in str(second.to_dict())
+
+
+def test_executor_rejects_invalid_tracers():
+    with pytest.raises(TypeError, match="tracer"):
+        ToolExecutor(ToolRegistry(), tracer=object())
+
+    executor = ToolExecutor(ToolRegistry())
+    with pytest.raises(TypeError, match="tracer"):
+        executor.execute(
+            ToolCall("call", "missing", {}),
+            tracer=object(),
+        )

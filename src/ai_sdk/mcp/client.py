@@ -23,6 +23,11 @@ from ai_sdk.mcp.transport import (
     BaseMCPTransport,
     MCPTransportResponseError,
 )
+from ai_sdk.observability import (
+    TraceCategory,
+    Tracer,
+    trace_span,
+)
 
 
 class MCPClientError(RuntimeError):
@@ -91,6 +96,7 @@ class MCPClient:
         protocol_version: str = MCP_PROTOCOL_VERSION,
         timeout_seconds: float = 30.0,
         max_input_rounds: int = 10,
+        tracer: Tracer | None = None,
     ) -> None:
         if not isinstance(transport, BaseMCPTransport):
             raise MCPValidationError("MCP transport is invalid.")
@@ -110,6 +116,8 @@ class MCPClient:
             raise MCPValidationError(
                 "MCP maximum input rounds must be positive."
             )
+        if tracer is not None and not isinstance(tracer, Tracer):
+            raise MCPValidationError("MCP tracer must be a Tracer.")
 
         self._transport = transport
         self._context = MCPRequestContext(
@@ -119,6 +127,7 @@ class MCPClient:
         )
         self._timeout_seconds = float(timeout_seconds)
         self._max_input_rounds = max_input_rounds
+        self.tracer = tracer
         self._state = MCPConnectionState.NEW
         self._transport_opened = False
         self._discovery: MCPDiscoveryResult | None = None
@@ -417,23 +426,35 @@ class MCPClient:
         callback: Callable[[], ResultT],
     ) -> ResultT:
         self._require_open()
-        try:
-            return callback()
-        except MCPTransportResponseError as error:
-            raise MCPRemoteError(
-                error.code,
-                error.message,
-            ) from error
-        except TimeoutError as error:
-            self._abort()
-            raise MCPTimeoutError(
-                f"MCP {operation} timed out."
-            ) from error
-        except Exception as error:
-            self._abort()
-            raise MCPTransportError(
-                f"MCP {operation} failed: {type(error).__name__}"
-            ) from error
+        with trace_span(
+            self.tracer,
+            "mcp.request",
+            TraceCategory.MCP,
+            {"mcp.operation": operation},
+        ) as span:
+            try:
+                result = callback()
+            except MCPTransportResponseError as error:
+                raise MCPRemoteError(
+                    error.code,
+                    error.message,
+                ) from error
+            except TimeoutError as error:
+                self._abort()
+                raise MCPTimeoutError(
+                    f"MCP {operation} timed out."
+                ) from error
+            except Exception as error:
+                self._abort()
+                raise MCPTransportError(
+                    f"MCP {operation} failed: {type(error).__name__}"
+                ) from error
+            if span is not None:
+                span.set_attribute(
+                    "mcp.input_required",
+                    isinstance(result, MCPInputRequiredResult),
+                )
+            return result
 
     def _process_round_result(
         self,

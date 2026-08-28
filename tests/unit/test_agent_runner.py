@@ -9,6 +9,11 @@ from ai_sdk.agents import (
     AgentTextBlock,
 )
 from ai_sdk.llm.base import BaseToolLLMClient
+from ai_sdk.observability import (
+    InMemoryTraceCollector,
+    TraceStatus,
+    Tracer,
+)
 from ai_sdk.tools import (
     ToolCall,
     ToolExecutor,
@@ -174,8 +179,44 @@ def test_runner_executes_tool_and_passes_event_to_next_turn():
     assert client.turns[1][2] == (state.events[0],)
 
 
+def test_runner_traces_nested_model_and_tool_operations():
+    collector = InMemoryTraceCollector()
+    tracer = Tracer(collector)
+    client = ScriptedAgentClient([
+        tool_response("call_1", 3),
+        final_response("Six"),
+    ])
+
+    state = AgentRunner(
+        client,
+        build_executor(),
+        tracer=tracer,
+    ).run([{"role": "user", "content": "private prompt"}])
+
+    records = collector.records()
+    root = next(record for record in records if record.name == "agent.run")
+    children = [
+        record
+        for record in records
+        if record.parent_span_id == root.span_id
+    ]
+    assert state.final_text == "Six"
+    assert [record.name for record in records].count(
+        "llm.tool_turn"
+    ) == 2
+    assert any(record.name == "tool.execute" for record in children)
+    assert all(record.trace_id == root.trace_id for record in records)
+    assert root.attributes["agent.tool_round_count"] == 1
+    assert root.attributes["agent.stop_reason"] == "final_response"
+    assert root.status is TraceStatus.OK
+    assert "private prompt" not in str(
+        [record.to_dict() for record in records]
+    )
+
+
 def test_runner_returns_explicit_max_round_stop_without_extra_execution():
     executions = []
+    collector = InMemoryTraceCollector()
     client = ScriptedAgentClient([
         tool_response("call_1", 1),
         tool_response("call_2", 2),
@@ -188,6 +229,7 @@ def test_runner_returns_explicit_max_round_stop_without_extra_execution():
         client,
         executor,
         max_tool_rounds=1,
+        tracer=Tracer(collector),
     ).run([{"role": "user", "content": "Keep going."}])
 
     assert state.stop_reason is AgentStopReason.MAX_TOOL_ROUNDS
@@ -195,6 +237,13 @@ def test_runner_returns_explicit_max_round_stop_without_extra_execution():
     assert len(state.events) == 2
     assert state.events[-1].tool_results == ()
     assert executions == [1]
+    root = next(
+        record
+        for record in collector.records()
+        if record.name == "agent.run"
+    )
+    assert root.status is TraceStatus.ERROR
+    assert root.error_type == "MaxToolRoundsExceeded"
 
 
 def test_runner_ask_raises_when_max_rounds_are_reached():
@@ -257,6 +306,13 @@ def test_runner_rejects_invalid_dependencies_and_outputs():
         AgentRunner(
             ScriptedAgentClient([final_response()]),
             object(),
+        )
+
+    with pytest.raises(TypeError, match="tracer"):
+        AgentRunner(
+            ScriptedAgentClient([final_response()]),
+            build_executor(),
+            tracer=object(),
         )
 
     runner = AgentRunner(

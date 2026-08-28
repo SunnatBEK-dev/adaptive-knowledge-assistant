@@ -7,15 +7,50 @@ from ai_sdk.tools.model import (
 )
 from ai_sdk.tools.registry import ToolRegistry
 from ai_sdk.tools.schema import ToolValidationError
+from ai_sdk.observability import (
+    TraceCategory,
+    Tracer,
+    trace_span,
+)
 
 
 class ToolExecutor:
     """Validate and execute only handlers in an explicit registry."""
 
-    def __init__(self, registry: ToolRegistry) -> None:
+    def __init__(
+        self,
+        registry: ToolRegistry,
+        *,
+        tracer: Tracer | None = None,
+    ) -> None:
+        if tracer is not None and not isinstance(tracer, Tracer):
+            raise TypeError("Tool tracer must be a Tracer.")
         self.registry = registry
+        self.tracer = tracer
 
-    def execute(self, call: ToolCall) -> ToolResult:
+    def execute(
+        self,
+        call: ToolCall,
+        *,
+        tracer: Tracer | None = None,
+    ) -> ToolResult:
+        if tracer is not None and not isinstance(tracer, Tracer):
+            raise TypeError("Tool tracer must be a Tracer.")
+        active_tracer = tracer or self.tracer
+        with trace_span(
+            active_tracer,
+            "tool.execute",
+            TraceCategory.TOOL,
+            {"tool.name": call.name},
+        ) as span:
+            result = self._execute(call)
+            if span is not None:
+                span.set_attribute("tool.is_error", result.is_error)
+                if result.is_error:
+                    span.set_error("ToolExecutionError")
+            return result
+
+    def _execute(self, call: ToolCall) -> ToolResult:
         tool = self.registry.get(call.name)
 
         if tool is None:

@@ -9,6 +9,11 @@ from ai_sdk.memory.model import (
     LongTermMemory,
     MemorySearchResult,
 )
+from ai_sdk.observability import (
+    TraceCategory,
+    Tracer,
+    trace_span,
+)
 from ai_sdk.storage.base import ConversationRepository
 from ai_sdk.tools.executor import ToolExecutor
 
@@ -25,6 +30,7 @@ class ConversationManager:
         memory_retrieval_k: int = 3,
         tool_executor: ToolExecutor | None = None,
         max_tool_rounds: int = 8,
+        tracer: Tracer | None = None,
     ) -> None:
         if memory_retrieval_k <= 0:
             raise ValueError(
@@ -47,6 +53,8 @@ class ConversationManager:
             raise TypeError(
                 "Tool executor must be a ToolExecutor."
             )
+        if tracer is not None and not isinstance(tracer, Tracer):
+            raise TypeError("Conversation tracer must be a Tracer.")
 
         self.conversation = conversation
         self.prompt_builder = prompt_builder
@@ -56,6 +64,15 @@ class ConversationManager:
         self.memory_retrieval_k = memory_retrieval_k
         self.tool_executor = tool_executor
         self.max_tool_rounds = max_tool_rounds
+        self.tracer = (
+            tracer
+            if tracer is not None
+            else (
+                None
+                if tool_executor is None
+                else tool_executor.tracer
+            )
+        )
 
     def _build_messages(
         self,
@@ -115,27 +132,72 @@ class ConversationManager:
         self,
         messages: list[LLMMessage],
     ) -> str:
-        if self.tool_executor is None:
-            return self.client.ask(messages)
+        with trace_span(
+            self.tracer,
+            "llm.generate",
+            TraceCategory.LLM,
+            {
+                "llm.message_count": len(messages),
+                "llm.tools_enabled": self.tool_executor is not None,
+            },
+        ) as span:
+            if self.tool_executor is None:
+                response = self.client.ask(messages)
+            else:
+                ask_with_tools = getattr(
+                    self.client,
+                    "ask_with_tools",
+                    None,
+                )
 
-        ask_with_tools = getattr(
-            self.client,
-            "ask_with_tools",
-            None,
-        )
+                if not callable(ask_with_tools):
+                    raise RuntimeError(
+                        "Configured LLM client does not support tools."
+                    )
 
-        if not callable(ask_with_tools):
-            raise RuntimeError(
-                "Configured LLM client does not support tools."
-            )
-
-        return ask_with_tools(
-            messages,
-            self.tool_executor,
-            max_tool_rounds=self.max_tool_rounds,
-        )
+                kwargs: dict[str, object] = {
+                    "max_tool_rounds": self.max_tool_rounds,
+                }
+                if self.tracer is not None:
+                    kwargs["tracer"] = self.tracer
+                response = ask_with_tools(
+                    messages,
+                    self.tool_executor,
+                    **kwargs,
+                )
+            if span is not None:
+                span.set_attribute(
+                    "llm.response_char_count",
+                    len(response),
+                )
+            return response
 
     def send_message(
+        self,
+        text: str,
+    ) -> str:
+        with trace_span(
+            self.tracer,
+            "conversation.send",
+            TraceCategory.WORKFLOW,
+            {
+                "conversation.message_count": len(
+                    self.conversation.messages
+                ),
+                "conversation.input_length": (
+                    len(text) if isinstance(text, str) else 0
+                ),
+            },
+        ) as span:
+            response = self._send_message(text)
+            if span is not None:
+                span.set_attribute(
+                    "conversation.response_length",
+                    len(response),
+                )
+            return response
+
+    def _send_message(
         self,
         text: str,
     ) -> str:
@@ -177,6 +239,33 @@ class ConversationManager:
         self,
         text: str,
     ) -> Iterator[str]:
+        with trace_span(
+            self.tracer,
+            "conversation.stream",
+            TraceCategory.WORKFLOW,
+            {
+                "conversation.message_count": len(
+                    self.conversation.messages
+                ),
+                "conversation.input_length": (
+                    len(text) if isinstance(text, str) else 0
+                ),
+            },
+        ) as span:
+            response_length = 0
+            for chunk in self._stream_message(text):
+                response_length += len(chunk)
+                yield chunk
+            if span is not None:
+                span.set_attribute(
+                    "conversation.response_length",
+                    response_length,
+                )
+
+    def _stream_message(
+        self,
+        text: str,
+    ) -> Iterator[str]:
         if self.tool_executor is not None:
             raise RuntimeError(
                 "Tool-enabled streaming is not supported. "
@@ -193,11 +282,22 @@ class ConversationManager:
         try:
             messages = self._build_messages(text)
 
-            for chunk in self.client.stream(
-                messages
-            ):
-                chunks.append(chunk)
-                yield chunk
+            with trace_span(
+                self.tracer,
+                "llm.stream",
+                TraceCategory.LLM,
+                {"llm.message_count": len(messages)},
+            ) as span:
+                for chunk in self.client.stream(
+                    messages
+                ):
+                    chunks.append(chunk)
+                    yield chunk
+                if span is not None:
+                    span.set_attribute(
+                        "llm.response_char_count",
+                        sum(len(chunk) for chunk in chunks),
+                    )
 
             response = "".join(chunks)
 

@@ -6,6 +6,11 @@ from ai_sdk.application.rag_manager import (
 from ai_sdk.context.prompt_builder import PromptBuilder
 from ai_sdk.core.conversation import Conversation
 from ai_sdk.embeddings.base import BaseEmbeddingClient
+from ai_sdk.observability import (
+    InMemoryTraceCollector,
+    TraceStatus,
+    Tracer,
+)
 from ai_sdk.retrieval.chunker import TextChunker
 from ai_sdk.retrieval.document import Document
 from ai_sdk.retrieval.in_memory import (
@@ -53,6 +58,8 @@ def test_full_offline_rag_workflow(tmp_path):
     )
     conversation = Conversation()
     client = RecordingLLMClient()
+    collector = InMemoryTraceCollector()
+    tracer = Tracer(collector)
     retriever = SemanticRetriever(
         embedding_client=KeywordEmbeddingClient(),
         vector_store=InMemoryVectorStore(),
@@ -68,6 +75,7 @@ def test_full_offline_rag_workflow(tmp_path):
         ),
         retriever=retriever,
         retrieval_k=1,
+        tracer=tracer,
     )
     document = Document(
         id="doc_rag_workflow",
@@ -93,3 +101,18 @@ def test_full_offline_rag_workflow(tmp_path):
         "How do Python functions work?",
         "Grounded answer",
     ]
+    records = collector.records()
+    root = next(
+        record
+        for record in records
+        if record.name == "conversation.stream"
+    )
+    assert {
+        "retrieval.search",
+        "llm.stream",
+    }.issubset({record.name for record in records})
+    assert all(record.trace_id == root.trace_id for record in records)
+    assert all(record.status is TraceStatus.OK for record in records)
+    assert "How do Python functions work?" not in str(
+        [record.to_dict() for record in records]
+    )

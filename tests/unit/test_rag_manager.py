@@ -5,6 +5,11 @@ from ai_sdk.application.rag_manager import (
 )
 from ai_sdk.context.prompt_builder import PromptBuilder
 from ai_sdk.core.conversation import Conversation
+from ai_sdk.observability import (
+    InMemoryTraceCollector,
+    TraceCategory,
+    Tracer,
+)
 from ai_sdk.retrieval.chunk import Chunk
 from ai_sdk.retrieval.catalog import IndexedDocument
 from ai_sdk.retrieval.document import Document
@@ -130,6 +135,7 @@ def build_manager(
     retrieval_k=2,
     client=None,
     tool_executor=None,
+    tracer=None,
 ):
     conversation = Conversation()
     client = client or FakeClient()
@@ -147,6 +153,7 @@ def build_manager(
         retriever=retriever,
         retrieval_k=retrieval_k,
         tool_executor=tool_executor,
+        tracer=tracer,
     )
     return (
         manager,
@@ -246,6 +253,43 @@ def test_send_message_retrieves_context_before_llm_call():
     )
     assert manager.last_citations[0].score == pytest.approx(
         0.9
+    )
+
+
+def test_rag_message_traces_workflow_retrieval_and_llm_without_text():
+    collector = InMemoryTraceCollector()
+    tracer = Tracer(collector)
+    manager, _, _, _, _, _ = build_manager(tracer=tracer)
+
+    response = manager.send_message("private user question")
+
+    records = collector.records()
+    root = next(
+        record
+        for record in records
+        if record.name == "conversation.send"
+    )
+    retrieval = next(
+        record
+        for record in records
+        if record.category is TraceCategory.RETRIEVAL
+    )
+    llm = next(
+        record
+        for record in records
+        if record.name == "llm.generate"
+    )
+    assert response == "Grounded answer"
+    assert retrieval.parent_span_id == root.span_id
+    assert llm.parent_span_id == root.span_id
+    assert retrieval.attributes == {
+        "retrieval.k": 2,
+        "retrieval.result_count": 1,
+    }
+    assert llm.attributes["llm.message_count"] > 0
+    assert llm.attributes["llm.response_char_count"] == len(response)
+    assert "private user question" not in str(
+        [record.to_dict() for record in records]
     )
 
 

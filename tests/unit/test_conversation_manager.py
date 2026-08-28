@@ -7,6 +7,11 @@ from ai_sdk.memory.model import (
     LongTermMemory,
     MemorySearchResult,
 )
+from ai_sdk.observability import (
+    InMemoryTraceCollector,
+    TraceStatus,
+    Tracer,
+)
 from ai_sdk.tools import ToolExecutor, ToolRegistry
 
 
@@ -116,6 +121,7 @@ def build_manager(
     memory_store=None,
     tool_executor=None,
     max_tool_rounds=8,
+    tracer=None,
 ):
     conversation = Conversation()
     client = client or FakeClient()
@@ -128,6 +134,7 @@ def build_manager(
         memory_store=memory_store,
         tool_executor=tool_executor,
         max_tool_rounds=max_tool_rounds,
+        tracer=tracer,
     )
     return manager, conversation, client, repository
 
@@ -186,6 +193,27 @@ def test_stream_message_yields_chunks_and_persists_full_response():
     ]
     assert conversation.last_message().content == "ABC"
     assert len(repository.saved) == 1
+
+
+def test_stream_message_traces_lengths_without_content():
+    collector = InMemoryTraceCollector()
+    manager, _, _, _ = build_manager(
+        tracer=Tracer(collector),
+    )
+
+    chunks = list(manager.stream_message("private question"))
+
+    root, llm = collector.records()
+    assert chunks == ["Assistant ", "response"]
+    assert root.name == "conversation.stream"
+    assert llm.name == "llm.stream"
+    assert llm.parent_span_id == root.span_id
+    assert root.attributes["conversation.response_length"] == 18
+    assert llm.attributes["llm.response_char_count"] == 18
+    assert root.status is llm.status is TraceStatus.OK
+    assert "private question" not in str(
+        [record.to_dict() for record in (root, llm)]
+    )
 
 
 def test_stream_message_rolls_back_when_stream_fails():
@@ -364,3 +392,8 @@ def test_manager_rejects_invalid_tool_round_limit(max_tool_rounds):
 def test_manager_rejects_invalid_tool_executor():
     with pytest.raises(TypeError, match="ToolExecutor"):
         build_manager(tool_executor=object())
+
+
+def test_manager_rejects_invalid_tracer():
+    with pytest.raises(TypeError, match="tracer"):
+        build_manager(tracer=object())

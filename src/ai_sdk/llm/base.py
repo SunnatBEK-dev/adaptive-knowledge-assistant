@@ -14,6 +14,7 @@ if TYPE_CHECKING:
         AgentModelResponse,
     )
     from ai_sdk.tools.schema import ToolSchema
+    from ai_sdk.observability import Tracer
 
 
 class BaseLLMClient(ABC):
@@ -51,6 +52,7 @@ class BaseToolLLMClient(BaseLLMClient):
         executor: ToolExecutor,
         *,
         max_tool_rounds: int = 8,
+        tracer: Tracer | None = None,
     ) -> str:
         from ai_sdk.agents.runner import AgentRunner
 
@@ -58,6 +60,7 @@ class BaseToolLLMClient(BaseLLMClient):
             client=self,
             executor=executor,
             max_tool_rounds=max_tool_rounds,
+            tracer=tracer,
         )
 
         if executor.registry.count() == 0:
