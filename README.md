@@ -7,7 +7,7 @@ and small abstractions over framework-specific magic.
 ## Current status
 
 The application architecture foundation is complete through Agents and MCP
-phase 8.1:
+phase 8.2:
 
 - conversation and message domain models;
 - JSON repository abstraction;
@@ -36,6 +36,10 @@ phase 8.1:
 - ordered, cursor-based MCP tool and resource catalogs;
 - MCP cache-hint preservation for list and discovery results;
 - explicit MCP transport lifecycle, timeouts, and failure isolation;
+- explicit MCP tool-call and resource-read contracts;
+- generic MCP content plus structured tool-result preservation;
+- explicitly approved MCP tool registration into the local allow-list;
+- atomic rejection of MCP schemas the local validator cannot enforce;
 - Anthropic/Claude adapter behind an LLM contract;
 - provider-neutral embedding-client contract;
 - lazy SentenceTransformer embedding adapter;
@@ -115,7 +119,12 @@ MCPClient -> MCPRequestContext
     `-- BaseMCPTransport
         |-- optional MCPDiscoveryResult
         |-- ordered MCPToolPage
-        `-- ordered MCPResourcePage
+        |-- ordered MCPResourcePage
+        |-- MCPToolRequest -> MCPToolResult
+        `-- MCPResourceReadRequest -> MCPResourceReadResult
+
+MCPToolAdapter -> approved compatible MCPTool -> ToolRegistry
+    `-- ToolExecutor -> MCPClient.call_tool
 ```
 
 The domain layer does not know about JSON, filesystem paths, Anthropic, API
@@ -259,12 +268,22 @@ optional and never runs automatically. If the host calls it, the client checks
 the requested protocol version and advertised tool/resource capabilities.
 `tools/list` and `resources/list` return exactly one ordered page at a time,
 including the next cursor and server cache hints; the host decides whether to
-request another page or cache a result.
+request another page or cache a result. `tools/call` preserves text, non-text,
+structured, and remote error results. `resources/read` preserves multiple text
+or binary content items plus cache hints.
+
+`MCPToolAdapter` never discovers or registers tools automatically. The host
+must pass exact approved names. Only schemas that fit the local tool layer's
+string, integer, number, and boolean parameter subset are accepted; unsupported
+constraints, nested inputs, incompatible names, missing approvals, and
+registry collisions are rejected before any registry change. Approved remote
+errors remain explicit tool errors, while transport exceptions still expose
+only their exception type.
 
 This phase deliberately has no concrete network or subprocess transport,
-credential handling, remote tool execution, resource reading, automatic
-pagination, or automatic discovery. The transport abstraction makes those
-additions testable without coupling the domain layer to one MCP library.
+credential handling, automatic pagination/discovery, schema aliases, or MCP
+multi round-trip input requests. The transport abstraction keeps those
+additions separate from protocol and allow-list policy.
 
 The default ingestion layer supports UTF-8 `.txt`, `.md`, `.markdown`, and
 `.rst` files. Directory synchronization scans recursively in deterministic
@@ -311,7 +330,6 @@ RUN_ANTHROPIC_INTEGRATION=1 \
 
 ## Next chapter
 
-MCP phase 8.2 will add explicit remote tool-call and resource-read contracts,
-then adapt approved MCP tools into the SDK's existing allow-listed tool layer.
-A concrete transport and credentials remain separate follow-up work so network
-and security policy do not leak into the protocol domain models.
+MCP phase 8.3 will add a concrete stateless Streamable HTTP transport and
+strict JSON-RPC response mapping. Authorization will be injected per request,
+and real network tests will remain opt-in so the default suite stays offline.

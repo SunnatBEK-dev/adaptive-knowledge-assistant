@@ -2,6 +2,18 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 
+class ToolHandlerError(RuntimeError):
+    """A handler failure whose content is safe to return."""
+
+    def __init__(self, content: str) -> None:
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError(
+                "Tool handler error content cannot be empty."
+            )
+        self.content = content
+        super().__init__(content)
+
+
 @dataclass(frozen=True)
 class ToolCall:
     id: str

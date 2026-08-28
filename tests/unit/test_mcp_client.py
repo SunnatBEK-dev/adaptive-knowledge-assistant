@@ -9,17 +9,21 @@ from ai_sdk.mcp import (
     MCPCapabilityError,
     MCPClient,
     MCPConnectionState,
+    MCPContentBlock,
     MCPDiscoveryResult,
     MCPImplementation,
     MCPLifecycleError,
     MCPProtocolError,
     MCPRequestContext,
     MCPResource,
+    MCPResourceContent,
     MCPResourcePage,
+    MCPResourceReadResult,
     MCPServerCapabilities,
     MCPTimeoutError,
     MCPTool,
     MCPToolPage,
+    MCPToolResult,
     MCPTransportError,
     MCPValidationError,
 )
@@ -49,6 +53,20 @@ class RecordingTransport(BaseMCPTransport):
                 MCPResource("file:///z.txt", "z.txt"),
                 MCPResource("file:///a.txt", "a.txt"),
             ]
+        )
+        self.tool_result = MCPToolResult(
+            [MCPContentBlock.text("remote result")]
+        )
+        self.resource_read_result = MCPResourceReadResult(
+            [
+                MCPResourceContent(
+                    "file:///z.txt",
+                    mime_type="text/plain",
+                    text="Z content",
+                )
+            ],
+            ttl_ms=500,
+            cache_scope="private",
         )
 
     def open(self, *, timeout_seconds):
@@ -83,6 +101,34 @@ class RecordingTransport(BaseMCPTransport):
         if isinstance(self.resources_result, BaseException):
             raise self.resources_result
         return self.resources_result
+
+    def call_tool(
+        self,
+        context,
+        request,
+        *,
+        timeout_seconds,
+    ):
+        self.calls.append(
+            ("call_tool", context, request, timeout_seconds)
+        )
+        if isinstance(self.tool_result, BaseException):
+            raise self.tool_result
+        return self.tool_result
+
+    def read_resource(
+        self,
+        context,
+        request,
+        *,
+        timeout_seconds,
+    ):
+        self.calls.append(
+            ("read_resource", context, request, timeout_seconds)
+        )
+        if isinstance(self.resource_read_result, BaseException):
+            raise self.resource_read_result
+        return self.resource_read_result
 
     def close(self):
         self.calls.append(("close",))
@@ -193,6 +239,69 @@ def test_resources_are_listed_one_explicit_page_at_a_time():
     )
 
 
+def test_tool_call_passes_copied_arguments_and_returns_remote_error():
+    transport = RecordingTransport()
+    transport.tool_result = MCPToolResult(
+        [MCPContentBlock.text("invalid city")],
+        is_error=True,
+    )
+    client = make_client(transport)
+    client.open()
+    arguments = {"city": "Samarqand"}
+
+    result = client.call_tool("get_weather", arguments)
+    arguments["city"] = "changed"
+
+    _, context, request, timeout = transport.calls[-1]
+    assert result.is_error
+    assert client.state is MCPConnectionState.OPEN
+    assert context is client.request_context
+    assert request.name == "get_weather"
+    assert request.arguments == {"city": "Samarqand"}
+    assert timeout == 2.5
+
+
+def test_resource_read_returns_multiple_content_items_and_cache_hints():
+    transport = RecordingTransport()
+    transport.resource_read_result = MCPResourceReadResult(
+        [
+            MCPResourceContent(
+                "file:///guide/one.txt",
+                text="one",
+                annotations={
+                    "audience": ["user"],
+                    "priority": 0.8,
+                },
+            ),
+            MCPResourceContent(
+                "file:///guide/two.bin",
+                mime_type="application/octet-stream",
+                blob="YWJj",
+            ),
+        ],
+        ttl_ms=900,
+        cache_scope="private",
+    )
+    client = make_client(transport)
+    client.open()
+
+    result = client.read_resource("file:///guide")
+
+    _, context, request, timeout = transport.calls[-1]
+    assert [content.uri for content in result.contents] == [
+        "file:///guide/one.txt",
+        "file:///guide/two.bin",
+    ]
+    assert result.ttl_ms == 900
+    assert result.contents[0].annotations == {
+        "audience": ["user"],
+        "priority": 0.8,
+    }
+    assert context is client.request_context
+    assert request.uri == "file:///guide"
+    assert timeout == 2.5
+
+
 @pytest.mark.parametrize(
     ("method_name", "capabilities", "message"),
     [
@@ -203,6 +312,16 @@ def test_resources_are_listed_one_explicit_page_at_a_time():
         ),
         (
             "list_resources",
+            MCPServerCapabilities(tools={}),
+            "resources",
+        ),
+        (
+            "call_tool",
+            MCPServerCapabilities(resources={}),
+            "tools",
+        ),
+        (
+            "read_resource",
             MCPServerCapabilities(tools={}),
             "resources",
         ),
@@ -223,7 +342,12 @@ def test_discovered_capabilities_block_unsupported_operations(
     client.discover()
 
     with pytest.raises(MCPCapabilityError, match=message):
-        getattr(client, method_name)()
+        if method_name == "call_tool":
+            client.call_tool("tool")
+        elif method_name == "read_resource":
+            client.read_resource("file:///resource")
+        else:
+            getattr(client, method_name)()
 
     assert client.state is MCPConnectionState.OPEN
     assert len(transport.calls) == 2
@@ -255,6 +379,12 @@ def test_unsupported_discovered_version_fails_and_closes_transport():
             "list_resources",
             "resources/list",
         ),
+        ("tool_result", "call_tool", "tools/call"),
+        (
+            "resource_read_result",
+            "read_resource",
+            "resources/read",
+        ),
     ],
 )
 def test_request_timeout_fails_and_closes_transport(
@@ -268,7 +398,12 @@ def test_request_timeout_fails_and_closes_transport(
     client.open()
 
     with pytest.raises(MCPTimeoutError, match=operation):
-        getattr(client, method_name)()
+        if method_name == "call_tool":
+            client.call_tool("tool")
+        elif method_name == "read_resource":
+            client.read_resource("file:///resource")
+        else:
+            getattr(client, method_name)()
 
     assert client.state is MCPConnectionState.FAILED
     assert transport.calls[-1] == ("close",)
@@ -298,6 +433,12 @@ def test_transport_failure_does_not_expose_exception_message():
             "list_resources",
             "resources/list",
         ),
+        ("tool_result", "call_tool", "tools/call"),
+        (
+            "resource_read_result",
+            "read_resource",
+            "resources/read",
+        ),
     ],
 )
 def test_invalid_transport_results_are_protocol_errors(
@@ -311,7 +452,12 @@ def test_invalid_transport_results_are_protocol_errors(
     client.open()
 
     with pytest.raises(MCPProtocolError, match=message):
-        getattr(client, method_name)()
+        if method_name == "call_tool":
+            client.call_tool("tool")
+        elif method_name == "read_resource":
+            client.read_resource("file:///resource")
+        else:
+            getattr(client, method_name)()
 
     assert client.state is MCPConnectionState.FAILED
 
@@ -541,6 +687,45 @@ def test_resource_rejects_invalid_fields(uri, name, size, message):
         lambda: MCPResourcePage(["invalid"]),
         lambda: MCPToolPage([], ttl_ms=-1),
         lambda: MCPResourcePage([], next_cursor=" "),
+        lambda: MCPContentBlock("text", {}),
+        lambda: MCPContentBlock.text(1),
+        lambda: MCPContentBlock("custom", {"type": "changed"}),
+        lambda: MCPContentBlock("custom", {"value": object()}),
+        lambda: MCPToolResult([]),
+        lambda: MCPToolResult(["invalid"]),
+        lambda: MCPToolResult(
+            [MCPContentBlock.text("result")],
+            is_error="yes",
+        ),
+        lambda: MCPToolResult(
+            structured_content=float("nan")
+        ),
+        lambda: MCPResourceContent(
+            "file:///resource",
+        ),
+        lambda: MCPResourceContent(
+            "file:///resource",
+            text="text",
+            blob="YQ==",
+        ),
+        lambda: MCPResourceContent(
+            "file:///resource",
+            text=1,
+        ),
+        lambda: MCPResourceContent(
+            "file:///resource",
+            blob=1,
+        ),
+        lambda: MCPResourceContent(
+            "file:///resource",
+            blob="not base64!",
+        ),
+        lambda: MCPResourceContent(
+            "file:///resource",
+            text="text",
+            annotations={"priority": float("nan")},
+        ),
+        lambda: MCPResourceReadResult([]),
     ],
 )
 def test_models_reject_invalid_contracts(factory):

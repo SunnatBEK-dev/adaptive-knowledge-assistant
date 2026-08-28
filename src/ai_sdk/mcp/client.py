@@ -7,7 +7,11 @@ from ai_sdk.mcp.model import (
     MCPDiscoveryResult,
     MCPImplementation,
     MCPRequestContext,
+    MCPResourceReadRequest,
+    MCPResourceReadResult,
     MCPResourcePage,
+    MCPToolRequest,
+    MCPToolResult,
     MCPToolPage,
     MCPValidationError,
 )
@@ -204,6 +208,58 @@ class MCPClient:
                 "MCP resources/list returned duplicate resource URIs."
             )
         return page
+
+    def call_tool(
+        self,
+        name: str,
+        arguments: Mapping[str, object] | None = None,
+    ) -> MCPToolResult:
+        self._require_open()
+        if (
+            self._discovery is not None
+            and not self._discovery.capabilities.supports_tools
+        ):
+            raise MCPCapabilityError(
+                "MCP server did not advertise tools support."
+            )
+        request = MCPToolRequest(name, arguments)
+        result = self._request(
+            "tools/call",
+            lambda: self._transport.call_tool(
+                self._context,
+                request,
+                timeout_seconds=self._timeout_seconds,
+            ),
+        )
+        if not isinstance(result, MCPToolResult):
+            self._fail_protocol(
+                "MCP tools/call returned an invalid result."
+            )
+        return result
+
+    def read_resource(self, uri: str) -> MCPResourceReadResult:
+        self._require_open()
+        if (
+            self._discovery is not None
+            and not self._discovery.capabilities.supports_resources
+        ):
+            raise MCPCapabilityError(
+                "MCP server did not advertise resources support."
+            )
+        request = MCPResourceReadRequest(uri)
+        result = self._request(
+            "resources/read",
+            lambda: self._transport.read_resource(
+                self._context,
+                request,
+                timeout_seconds=self._timeout_seconds,
+            ),
+        )
+        if not isinstance(result, MCPResourceReadResult):
+            self._fail_protocol(
+                "MCP resources/read returned an invalid result."
+            )
+        return result
 
     def close(self) -> None:
         if self._state is MCPConnectionState.CLOSED:

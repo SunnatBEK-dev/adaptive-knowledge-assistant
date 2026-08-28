@@ -3,7 +3,11 @@ from abc import ABC, abstractmethod
 from ai_sdk.mcp.model import (
     MCPDiscoveryResult,
     MCPRequestContext,
+    MCPResourceReadRequest,
+    MCPResourceReadResult,
     MCPResourcePage,
+    MCPToolRequest,
+    MCPToolResult,
     MCPToolPage,
 )
 
@@ -43,6 +47,26 @@ class BaseMCPTransport(ABC):
         timeout_seconds: float,
     ) -> MCPResourcePage:
         """Return one ordered resources/list page."""
+
+    @abstractmethod
+    def call_tool(
+        self,
+        context: MCPRequestContext,
+        request: MCPToolRequest,
+        *,
+        timeout_seconds: float,
+    ) -> MCPToolResult:
+        """Perform one complete tools/call request."""
+
+    @abstractmethod
+    def read_resource(
+        self,
+        context: MCPRequestContext,
+        request: MCPResourceReadRequest,
+        *,
+        timeout_seconds: float,
+    ) -> MCPResourceReadResult:
+        """Perform one complete resources/read request."""
 
     @abstractmethod
     def close(self) -> None:

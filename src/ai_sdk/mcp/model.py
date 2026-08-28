@@ -1,7 +1,10 @@
+from base64 import b64decode
+from binascii import Error as BinasciiError
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
 from enum import Enum
+import json
 import re
 from urllib.parse import urlsplit
 
@@ -54,6 +57,24 @@ def _copy_mapping(
     return deepcopy(dict(value))
 
 
+def _copy_json_value(
+    value: object,
+    field_name: str,
+) -> object:
+    copied = deepcopy(value)
+    try:
+        json.dumps(
+            copied,
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+    except (TypeError, ValueError) as error:
+        raise MCPValidationError(
+            f"MCP {field_name} must be valid JSON data."
+        ) from error
+    return copied
+
+
 def _optional_text(
     value: object,
     field_name: str,
@@ -76,6 +97,33 @@ def _validate_cache_hints(
             "MCP cache TTL must be a non-negative integer."
         )
     return ttl_ms, _optional_text(cache_scope, "cache scope")
+
+
+def _validate_tool_name(name: object) -> str:
+    if (
+        not isinstance(name, str)
+        or _TOOL_NAME_PATTERN.fullmatch(name) is None
+    ):
+        raise MCPValidationError(
+            "MCP tool name must use 1-128 ASCII letters, "
+            "digits, underscores, hyphens, or dots."
+        )
+    return name
+
+
+def _validate_uri(uri: object, field_name: str) -> str:
+    validated_uri = _require_text(uri, field_name)
+    try:
+        uri_scheme = urlsplit(validated_uri).scheme
+    except ValueError as error:
+        raise MCPValidationError(
+            f"MCP {field_name} is invalid."
+        ) from error
+    if not uri_scheme:
+        raise MCPValidationError(
+            f"MCP {field_name} must include a scheme."
+        )
+    return validated_uri
 
 
 @dataclass(frozen=True)
@@ -253,21 +301,14 @@ class MCPTool:
         title: str | None = None,
         description: str | None = None,
     ) -> None:
-        if (
-            not isinstance(name, str)
-            or _TOOL_NAME_PATTERN.fullmatch(name) is None
-        ):
-            raise MCPValidationError(
-                "MCP tool name must use 1-128 ASCII letters, "
-                "digits, underscores, hyphens, or dots."
-            )
+        validated_name = _validate_tool_name(name)
         schema = _copy_mapping(input_schema, "tool input schema")
         if schema.get("type") != "object":
             raise MCPValidationError(
                 "MCP tool input schema root type must be object."
             )
 
-        object.__setattr__(self, "name", name)
+        object.__setattr__(self, "name", validated_name)
         object.__setattr__(self, "input_schema", schema)
         object.__setattr__(
             self,
@@ -300,17 +341,7 @@ class MCPResource:
         mime_type: str | None = None,
         size: int | None = None,
     ) -> None:
-        validated_uri = _require_text(uri, "resource URI")
-        try:
-            uri_scheme = urlsplit(validated_uri).scheme
-        except ValueError as error:
-            raise MCPValidationError(
-                "MCP resource URI is invalid."
-            ) from error
-        if not uri_scheme:
-            raise MCPValidationError(
-                "MCP resource URI must include a scheme."
-            )
+        validated_uri = _validate_uri(uri, "resource URI")
         if size is not None and (
             not isinstance(size, int)
             or isinstance(size, bool)
@@ -407,5 +438,236 @@ class MCPResourcePage:
             "next_cursor",
             _optional_text(next_cursor, "next cursor"),
         )
+        object.__setattr__(self, "ttl_ms", validated_ttl)
+        object.__setattr__(self, "cache_scope", validated_scope)
+
+
+@dataclass(frozen=True, init=False)
+class MCPToolRequest:
+    name: str
+    arguments: dict[str, object]
+
+    def __init__(
+        self,
+        name: str,
+        arguments: Mapping[str, object] | None = None,
+    ) -> None:
+        validated_arguments = _copy_mapping(
+            {} if arguments is None else arguments,
+            "tool arguments",
+        )
+        _copy_json_value(validated_arguments, "tool arguments")
+        object.__setattr__(self, "name", _validate_tool_name(name))
+        object.__setattr__(self, "arguments", validated_arguments)
+
+
+@dataclass(frozen=True, init=False)
+class MCPContentBlock:
+    type: str
+    data: dict[str, object]
+
+    def __init__(
+        self,
+        type: str,
+        data: Mapping[str, object],
+    ) -> None:
+        validated_type = _require_text(type, "content type")
+        validated_data = _copy_mapping(data, "content data")
+        if "type" in validated_data:
+            raise MCPValidationError(
+                "MCP content data cannot redefine its type."
+            )
+        _copy_json_value(validated_data, "content data")
+        if validated_type == "text" and not isinstance(
+            validated_data.get("text"),
+            str,
+        ):
+            raise MCPValidationError(
+                "MCP text content must contain text."
+            )
+
+        object.__setattr__(self, "type", validated_type)
+        object.__setattr__(self, "data", validated_data)
+
+    @classmethod
+    def text(cls, text: str) -> "MCPContentBlock":
+        if not isinstance(text, str):
+            raise MCPValidationError(
+                "MCP text content must be a string."
+            )
+        return cls("text", {"text": text})
+
+    def to_dict(self) -> dict[str, object]:
+        return {"type": self.type, **deepcopy(self.data)}
+
+
+_MISSING_STRUCTURED_CONTENT = object()
+
+
+@dataclass(frozen=True, init=False)
+class MCPToolResult:
+    content: tuple[MCPContentBlock, ...]
+    structured_content: object
+    has_structured_content: bool
+    is_error: bool
+
+    def __init__(
+        self,
+        content: Sequence[MCPContentBlock] = (),
+        *,
+        structured_content: object = _MISSING_STRUCTURED_CONTENT,
+        is_error: bool = False,
+    ) -> None:
+        normalized = tuple(content)
+        if any(
+            not isinstance(block, MCPContentBlock)
+            for block in normalized
+        ):
+            raise MCPValidationError(
+                "MCP tool result contains an invalid content block."
+            )
+        has_structured = (
+            structured_content is not _MISSING_STRUCTURED_CONTENT
+        )
+        if not normalized and not has_structured:
+            raise MCPValidationError(
+                "MCP tool result must contain content."
+            )
+        if not isinstance(is_error, bool):
+            raise MCPValidationError(
+                "MCP tool result error flag must be boolean."
+            )
+        copied_structured = (
+            None
+            if not has_structured
+            else _copy_json_value(
+                structured_content,
+                "structured tool result",
+            )
+        )
+
+        object.__setattr__(self, "content", normalized)
+        object.__setattr__(
+            self,
+            "structured_content",
+            copied_structured,
+        )
+        object.__setattr__(
+            self,
+            "has_structured_content",
+            has_structured,
+        )
+        object.__setattr__(self, "is_error", is_error)
+
+
+@dataclass(frozen=True, init=False)
+class MCPResourceReadRequest:
+    uri: str
+
+    def __init__(self, uri: str) -> None:
+        object.__setattr__(
+            self,
+            "uri",
+            _validate_uri(uri, "resource URI"),
+        )
+
+
+@dataclass(frozen=True, init=False)
+class MCPResourceContent:
+    uri: str
+    mime_type: str | None
+    text: str | None
+    blob: str | None
+    annotations: dict[str, object] | None
+
+    def __init__(
+        self,
+        uri: str,
+        *,
+        mime_type: str | None = None,
+        text: str | None = None,
+        blob: str | None = None,
+        annotations: Mapping[str, object] | None = None,
+    ) -> None:
+        if (text is None) == (blob is None):
+            raise MCPValidationError(
+                "MCP resource content must contain exactly one of "
+                "text or blob."
+            )
+        if text is not None and not isinstance(text, str):
+            raise MCPValidationError(
+                "MCP resource text must be a string."
+            )
+        if blob is not None:
+            if not isinstance(blob, str):
+                raise MCPValidationError(
+                    "MCP resource blob must be a base64 string."
+                )
+            try:
+                b64decode(blob, validate=True)
+            except (BinasciiError, ValueError) as error:
+                raise MCPValidationError(
+                    "MCP resource blob must be valid base64."
+                ) from error
+        validated_annotations = (
+            None
+            if annotations is None
+            else _copy_mapping(
+                annotations,
+                "resource annotations",
+            )
+        )
+        if validated_annotations is not None:
+            _copy_json_value(
+                validated_annotations,
+                "resource annotations",
+            )
+
+        object.__setattr__(
+            self,
+            "uri",
+            _validate_uri(uri, "resource content URI"),
+        )
+        object.__setattr__(
+            self,
+            "mime_type",
+            _optional_text(mime_type, "resource MIME type"),
+        )
+        object.__setattr__(self, "text", text)
+        object.__setattr__(self, "blob", blob)
+        object.__setattr__(
+            self,
+            "annotations",
+            validated_annotations,
+        )
+
+
+@dataclass(frozen=True, init=False)
+class MCPResourceReadResult:
+    contents: tuple[MCPResourceContent, ...]
+    ttl_ms: int | None
+    cache_scope: str | None
+
+    def __init__(
+        self,
+        contents: Sequence[MCPResourceContent],
+        *,
+        ttl_ms: int | None = None,
+        cache_scope: str | None = None,
+    ) -> None:
+        normalized = tuple(contents)
+        if not normalized or any(
+            not isinstance(content, MCPResourceContent)
+            for content in normalized
+        ):
+            raise MCPValidationError(
+                "MCP resource read result must contain valid content."
+            )
+        validated_ttl, validated_scope = _validate_cache_hints(
+            ttl_ms,
+            cache_scope,
+        )
+
+        object.__setattr__(self, "contents", normalized)
         object.__setattr__(self, "ttl_ms", validated_ttl)
         object.__setattr__(self, "cache_scope", validated_scope)

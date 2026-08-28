@@ -5,14 +5,20 @@ from ai_sdk.mcp import (
     BaseMCPTransport,
     MCPClient,
     MCPConnectionState,
+    MCPContentBlock,
     MCPDiscoveryResult,
     MCPImplementation,
     MCPResource,
+    MCPResourceContent,
     MCPResourcePage,
+    MCPResourceReadResult,
     MCPServerCapabilities,
     MCPTool,
+    MCPToolAdapter,
     MCPToolPage,
+    MCPToolResult,
 )
+from ai_sdk.tools import ToolCall, ToolExecutor, ToolRegistry
 
 
 class InMemoryMCPTransport(BaseMCPTransport):
@@ -43,7 +49,7 @@ class InMemoryMCPTransport(BaseMCPTransport):
             return MCPToolPage(
                 [
                     MCPTool(
-                        "search.docs",
+                        "search_docs",
                         {
                             "type": "object",
                             "properties": {
@@ -81,6 +87,44 @@ class InMemoryMCPTransport(BaseMCPTransport):
             cache_scope="private",
         )
 
+    def call_tool(
+        self,
+        context,
+        request,
+        *,
+        timeout_seconds,
+    ):
+        assert self.is_open
+        assert request.name == "search_docs"
+        assert request.arguments == {"query": "Python"}
+        self.received_meta.append(context.to_meta())
+        return MCPToolResult(
+            [MCPContentBlock.text("Found Python guide.")],
+            structured_content={"matches": 1},
+        )
+
+    def read_resource(
+        self,
+        context,
+        request,
+        *,
+        timeout_seconds,
+    ):
+        assert self.is_open
+        assert request.uri == "file:///knowledge/python.md"
+        self.received_meta.append(context.to_meta())
+        return MCPResourceReadResult(
+            [
+                MCPResourceContent(
+                    request.uri,
+                    mime_type="text/markdown",
+                    text="# Python guide",
+                )
+            ],
+            ttl_ms=10_000,
+            cache_scope="private",
+        )
+
     def close(self):
         self.is_open = False
 
@@ -102,18 +146,39 @@ def test_stateless_mcp_discovery_and_catalog_workflow():
             cursor=first_tools.next_cursor
         )
         resources = client.list_resources()
+        registry = ToolRegistry()
+        registered = MCPToolAdapter(client).register_approved(
+            registry,
+            first_tools.tools + second_tools.tools,
+            approved_names=["search_docs"],
+        )
+        tool_result = ToolExecutor(registry).execute(
+            ToolCall(
+                "call-1",
+                "search_docs",
+                {"query": "Python"},
+            )
+        )
+        resource_result = client.read_resource(
+            resources.resources[0].uri
+        )
 
         assert discovery.capabilities.supports_tools
         assert discovery.capabilities.supports_resources
-        assert first_tools.tools[0].name == "search.docs"
+        assert first_tools.tools[0].name == "search_docs"
         assert second_tools.tools[0].name == "health-check"
         assert resources.resources[0].uri == (
             "file:///knowledge/python.md"
         )
+        assert registered == ("search_docs",)
+        assert registry.count() == 1
+        assert tool_result.content == "Found Python guide."
+        assert not tool_result.is_error
+        assert resource_result.contents[0].text == "# Python guide"
 
     assert client.state is MCPConnectionState.CLOSED
     assert not transport.is_open
-    assert len(transport.received_meta) == 4
+    assert len(transport.received_meta) == 6
     assert all(
         meta["io.modelcontextprotocol/protocolVersion"]
         == MCP_PROTOCOL_VERSION
