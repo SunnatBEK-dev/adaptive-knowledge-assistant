@@ -6,8 +6,8 @@ and small abstractions over framework-specific magic.
 
 ## Current status
 
-The application architecture foundation is complete through observability
-phase 9.1:
+The application architecture foundation is complete through evaluation
+phase 9.2:
 
 - conversation and message domain models;
 - JSON repository abstraction;
@@ -53,6 +53,10 @@ phase 9.1:
 - bounded, thread-safe in-memory trace collection;
 - opt-in tracing across LLM, retrieval, tool, agent, and MCP operations;
 - safe trace metadata with sensitive-field redaction and error types only;
+- explicit text eval cases and a provider-neutral evaluator contract;
+- deterministic multi-evaluator runs with per-case failure isolation;
+- evaluator thresholds and a configurable suite pass-rate threshold;
+- aggregate pass-rate, error-count, failed-case, and mean-score reports;
 - Anthropic/Claude adapter behind an LLM contract;
 - provider-neutral embedding-client contract;
 - lazy SentenceTransformer embedding adapter;
@@ -111,6 +115,11 @@ tree with bounded timing, status, counts, and exception type metadata. Raw
 prompts, model responses, tool arguments, credentials, and MCP request state
 are not collected by the built-in instrumentation.
 
+Phase 9.2 adds a small offline evaluation harness beside the specialized
+retrieval metrics. It runs an application target once per explicit case,
+applies one or more deterministic evaluators, isolates case failures, and
+produces an aggregate quality report without retaining generated outputs.
+
 ## Architecture
 
 ```text
@@ -153,6 +162,9 @@ MCPToolAdapter -> approved compatible MCPTool -> ToolRegistry
 
 Tracer -> TraceCollector -> InMemoryTraceCollector
     `-- TraceRecord (trace/span IDs, parent, timing, status, safe attributes)
+
+EvaluationRunner -> EvalCase -> application target
+    `-- Evaluator -> EvalScore -> EvalCaseResult -> EvaluationReport
 ```
 
 The domain layer does not know about JSON, filesystem paths, Anthropic, API
@@ -396,6 +408,47 @@ unless the host supplies another `TraceCollector` implementation. This phase
 does not yet include remote trace propagation, sampling, an OpenTelemetry
 exporter, metrics, logs, or persistent trace reports.
 
+## Evaluation
+
+The general evaluation harness is offline and provider-neutral. Each evaluator
+returns a normalized score from zero to one and exposes the threshold that
+turns that score into a pass or failure:
+
+```python
+from ai_sdk.evaluation import (
+    EvalCase,
+    EvaluationRunner,
+    ExactMatchEvaluator,
+)
+
+cases = [
+    EvalCase(
+        id="python-version",
+        input_text="Which Python version is required?",
+        expected_output="Python 3.10 or newer.",
+    ),
+]
+runner = EvaluationRunner(
+    [ExactMatchEvaluator(strip=True)],
+    minimum_pass_rate=1.0,
+)
+report = runner.evaluate(cases, answer_question)
+
+if not report.passed:
+    print(report.failed_case_ids)
+```
+
+`EvaluationRunner` calls the target once per case and runs evaluators in their
+declared order. A target or evaluator exception fails only its current case;
+the report stores the exception class, never its message or the generated
+output. Missing scores on an errored case count as zero in aggregate means.
+Custom evaluators implement `name`, `threshold`, and
+`evaluate(case, actual_output)`. `ExactMatchEvaluator` is the only built-in
+general text evaluator in this phase; retrieval keeps its purpose-built Hit
+Rate, Recall, and MRR evaluators. LLM judges, dataset persistence, a dedicated
+eval CLI, cost/latency summaries, and regression gates are intentionally left
+for later phases.
+
 The default ingestion layer supports UTF-8 `.txt`, `.md`, `.markdown`, and
 `.rst` files. Directory synchronization scans recursively in deterministic
 path order, skips unsupported formats, and persists content hashes plus the
@@ -441,8 +494,8 @@ RUN_ANTHROPIC_INTEGRATION=1 \
 
 ## Next chapter
 
-Phase 9.2 will add a small provider-neutral evaluation harness: explicit eval
-cases, deterministic evaluator contracts, pass/fail criteria, and aggregate
-quality reports. Cost and latency summaries, regression gates, exporters, and
-persistent observability storage remain later opt-in layers rather than core
-runtime requirements.
+Phase 9.3 will derive bounded latency summaries from trace records and add an
+explicit provider-neutral usage/cost input contract. It will report counts,
+duration percentiles, and supplied cost totals without guessing provider
+prices. Regression gates, exporters, and persistent observability storage
+remain later opt-in layers rather than core runtime requirements.

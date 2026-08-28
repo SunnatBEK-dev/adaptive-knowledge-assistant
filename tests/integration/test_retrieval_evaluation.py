@@ -1,6 +1,11 @@
 import pytest
 
 from ai_sdk.embeddings.base import BaseEmbeddingClient
+from ai_sdk.evaluation import (
+    EvalCase,
+    EvaluationRunner,
+    ExactMatchEvaluator,
+)
 from ai_sdk.evaluation.retrieval import (
     RetrievalComparator,
     RetrievalEvalCase,
@@ -72,6 +77,53 @@ def test_real_retriever_scores_offline_evaluation_dataset():
     assert report.hit_rate == pytest.approx(1.0)
     assert report.mean_recall == pytest.approx(1.0)
     assert report.mean_reciprocal_rank == pytest.approx(1.0)
+
+
+def test_general_eval_harness_scores_a_real_sdk_component():
+    retriever = SemanticRetriever(
+        embedding_client=KeywordEmbeddingClient(),
+        vector_store=InMemoryVectorStore(),
+    )
+    retriever.index([
+        Chunk(
+            id="chunk_python",
+            document_id="doc_guide",
+            content="Python functions",
+            index=0,
+        ),
+        Chunk(
+            id="chunk_cooking",
+            document_id="doc_guide",
+            content="Cooking recipes",
+            index=1,
+        ),
+    ])
+
+    def retrieve_first_chunk_id(query):
+        return retriever.retrieve(query, k=1)[0].chunk.id
+
+    report = EvaluationRunner(
+        [ExactMatchEvaluator()],
+        minimum_pass_rate=1.0,
+    ).evaluate(
+        [
+            EvalCase(
+                "python",
+                "How do Python functions work?",
+                "chunk_python",
+            ),
+            EvalCase(
+                "cooking",
+                "How should I start cooking?",
+                "chunk_cooking",
+            ),
+        ],
+        retrieve_first_chunk_id,
+    )
+
+    assert report.passed is True
+    assert report.pass_rate == pytest.approx(1.0)
+    assert report.mean_scores == {"exact_match": 1.0}
 
 
 class ComparisonEmbeddingClient(BaseEmbeddingClient):
