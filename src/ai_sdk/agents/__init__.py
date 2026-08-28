@@ -1,3 +1,12 @@
+from ai_sdk.agents.coordination import (
+    AgentTask,
+    AgentTaskResult,
+    AgentTaskStatus,
+    AgentWorker,
+    CoordinationError,
+    CoordinationResult,
+    MultiAgentCoordinator,
+)
 from ai_sdk.agents.model import (
     AgentEvent,
     AgentModelResponse,
@@ -30,6 +39,10 @@ from ai_sdk.agents.state import AgentState
 
 
 __all__ = [
+    "AgentTask",
+    "AgentTaskResult",
+    "AgentTaskStatus",
+    "AgentWorker",
     "AgentPlan",
     "AgentReflection",
     "AgentEvent",
@@ -42,8 +55,11 @@ __all__ = [
     "AgentTextBlock",
     "BaseAgentPlanner",
     "BaseAgentReflector",
+    "CoordinationError",
+    "CoordinationResult",
     "LLMAgentPlanner",
     "LLMAgentReflector",
+    "MultiAgentCoordinator",
     "PlanStatus",
     "PlanStep",
     "PlanValidationError",

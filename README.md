@@ -6,7 +6,7 @@ and small abstractions over framework-specific magic.
 
 ## Current status
 
-The application architecture foundation is complete through Agents phase 6.3:
+The application architecture foundation is complete through Agents phase 6.4:
 
 - conversation and message domain models;
 - JSON repository abstraction;
@@ -27,6 +27,8 @@ The application architecture foundation is complete through Agents phase 6.3:
 - ordered plan steps with controlled status transitions and outcomes;
 - bounded reflection for finished agent states and terminal plans;
 - structured reflection verdicts, strengths, and improvements;
+- named agent workers with explicit task assignment;
+- deterministic multi-agent result collection and failure isolation;
 - Anthropic/Claude adapter behind an LLM contract;
 - provider-neutral embedding-client contract;
 - lazy SentenceTransformer embedding adapter;
@@ -81,6 +83,7 @@ RAGConversationManager
     |-- PromptBuilder -> SlidingContextWindow -> LLMMessage
     |                    |-- TokenCounter -> RegexTokenCounter
     |                    `-- ExtractiveConversationSummarizer
+    |-- MultiAgentCoordinator -> AgentWorker -> isolated AgentRunner run
     |-- AgentRunner -> AgentState -> AgentEvent
     |                 |-- ToolRegistry -> ToolExecutor -> ToolResult
     |                 `-- BaseToolLLMClient -> ClaudeClient (one turn)
@@ -221,6 +224,17 @@ be truncated; because it is sent to the configured LLM provider, host
 applications should not include secrets in state, plan outcomes, or tool
 results.
 
+`MultiAgentCoordinator` is an explicit sequential coordinator. Named workers
+are registered with one responsibility and one `AgentRunner`; every task names
+its worker directly. The coordinator validates all assignments before any work
+starts, creates a fresh `AgentState` for each task, preserves input order in
+the result, and contains one worker failure so later tasks can continue.
+Exception messages are not exposed. Isolation is at the agent-state level, not
+an operating-system process boundary, so stateful clients and tool handlers
+remain the host application's responsibility. The coordinator does not perform
+automatic delegation, implicit handoffs, shared-state mutation, parallel
+execution, or recursive agent calls.
+
 The default ingestion layer supports UTF-8 `.txt`, `.md`, `.markdown`, and
 `.rst` files. Directory synchronization scans recursively in deterministic
 path order, skips unsupported formats, and persists content hashes plus the
@@ -266,7 +280,7 @@ RUN_ANTHROPIC_INTEGRATION=1 \
 
 ## Next chapter
 
-The next Agents phase is minimal multi-agent coordination: named workers,
-isolated runs, explicit task assignment, and deterministic result collection.
-Shared mutable state, automatic delegation, and agent-to-agent recursion will
-remain out of scope until the coordinator contract is stable.
+The next major chapter is MCP / External Systems. It will begin with
+provider-neutral MCP server, resource, and tool contracts plus explicit
+connection lifecycle and timeout behavior. Remote execution, credentials, and
+automatic discovery will not be added until the local contract is tested.
