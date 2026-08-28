@@ -8,8 +8,8 @@ from ai_sdk.agents.model import (
     AgentTextBlock,
 )
 from ai_sdk.config import (
-    API_KEY,
-    MODEL,
+    ANTHROPIC_API_KEY,
+    ANTHROPIC_MODEL,
     MAX_TOKENS,
     TIMEOUT,
 )
@@ -17,6 +17,10 @@ from ai_sdk.llm.base import BaseToolLLMClient
 from ai_sdk.llm.types import LLMMessage
 from ai_sdk.tools.model import ToolCall
 from ai_sdk.tools.schema import ToolSchema
+
+
+API_KEY = ANTHROPIC_API_KEY
+MODEL = ANTHROPIC_MODEL
 
 
 class ClaudeClient(BaseToolLLMClient):
@@ -35,7 +39,7 @@ class ClaudeClient(BaseToolLLMClient):
 
         if not self.model:
             raise RuntimeError(
-                "MODEL is not configured."
+                "ANTHROPIC_MODEL or MODEL is not configured."
             )
 
         if client is not None:

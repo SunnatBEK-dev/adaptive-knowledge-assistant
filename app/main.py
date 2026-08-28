@@ -32,7 +32,7 @@ from ai_sdk.ingestion import (
     TextDocumentLoader,
     create_default_ingestor,
 )
-from ai_sdk.llm.claude import ClaudeClient
+from ai_sdk.llm.factory import create_llm_client
 from ai_sdk.memory.json_store import JsonMemoryStore
 from ai_sdk.retrieval.chunker import TextChunker
 from ai_sdk.retrieval.document import Document
@@ -178,7 +178,7 @@ def build_manager() -> RAGConversationManager:
                 )
             ),
         ),
-        client=ClaudeClient(),
+        client=create_llm_client(),
         repository=repository,
         chunker=TextChunker(
             chunk_size=CHUNK_SIZE,
@@ -197,7 +197,7 @@ def run_cli(
     ingestor: DocumentIngestor | None = None,
 ) -> None:
     ingestor = ingestor or create_default_ingestor()
-    print("Claude RAG Chat")
+    print("AI RAG Chat")
     print_help()
 
     while True:
@@ -328,7 +328,7 @@ def run_cli(
                 continue
 
             print(
-                "\nClaude: ",
+                "\nAssistant: ",
                 end="",
                 flush=True,
             )

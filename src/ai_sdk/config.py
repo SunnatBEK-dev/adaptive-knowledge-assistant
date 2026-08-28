@@ -15,8 +15,16 @@ EMBEDDINGS_FILE = DATA_DIR / "embeddings.json"
 VECTOR_STORE_FILE = DATA_DIR / "vectors.json"
 MEMORY_FILE = DATA_DIR / "memories.json"
 
-API_KEY = os.getenv("ANTHROPIC_API_KEY")
+AI_PROVIDER = os.getenv("AI_PROVIDER", "anthropic")
 MODEL = os.getenv("MODEL")
+
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL") or MODEL
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL") or MODEL
+
+# Backward-compatible alias for the original Claude-only configuration.
+API_KEY = ANTHROPIC_API_KEY
 
 MAX_TOKENS = int(
     os.getenv("MAX_TOKENS", "1024")

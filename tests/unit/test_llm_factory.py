@@ -1,0 +1,40 @@
+import pytest
+
+import ai_sdk.llm.factory as factory_module
+from ai_sdk.llm.factory import create_llm_client
+
+
+def test_factory_creates_selected_provider(monkeypatch):
+    anthropic_client = object()
+    openai_client = object()
+    monkeypatch.setattr(
+        factory_module,
+        "ClaudeClient",
+        lambda: anthropic_client,
+    )
+    monkeypatch.setattr(
+        factory_module,
+        "OpenAIClient",
+        lambda: openai_client,
+    )
+
+    assert create_llm_client(" Anthropic ") is anthropic_client
+    assert create_llm_client("OPENAI") is openai_client
+
+
+def test_factory_uses_environment_provider(monkeypatch):
+    expected = object()
+    monkeypatch.setattr(factory_module, "AI_PROVIDER", "openai")
+    monkeypatch.setattr(
+        factory_module,
+        "OpenAIClient",
+        lambda: expected,
+    )
+
+    assert create_llm_client() is expected
+
+
+@pytest.mark.parametrize("provider", ["", "unknown", 42])
+def test_factory_rejects_invalid_provider(provider):
+    with pytest.raises(RuntimeError):
+        create_llm_client(provider)

@@ -6,8 +6,8 @@ and small abstractions over framework-specific magic.
 
 ## Current status
 
-The application architecture foundation is complete through evaluation
-phase 9.2:
+The application architecture foundation is complete through evaluation phase
+9.2 and the first multi-provider integration:
 
 - conversation and message domain models;
 - JSON repository abstraction;
@@ -20,6 +20,7 @@ phase 9.2:
 - strict tool argument validation and allow-listed execution;
 - structured tool calls and serialized success/error results;
 - Claude tool-use request/response translation;
+- OpenAI Responses API request/response translation;
 - bounded multi-round tool execution with duplicate-call protection;
 - optional tool-enabled conversation and RAG orchestration;
 - provider-neutral `AgentRunner` loop policy;
@@ -58,6 +59,8 @@ phase 9.2:
 - evaluator thresholds and a configurable suite pass-rate threshold;
 - aggregate pass-rate, error-count, failed-case, and mean-score reports;
 - Anthropic/Claude adapter behind an LLM contract;
+- OpenAI text, streaming, and function-calling adapter;
+- environment-selected Anthropic or OpenAI client creation;
 - provider-neutral embedding-client contract;
 - lazy SentenceTransformer embedding adapter;
 - Document and Chunk retrieval domain models;
@@ -95,12 +98,14 @@ block without another API call. Directory-backed indexes also remain
 synchronized across application restarts without embedding unchanged files
 again. User-approved durable facts are stored separately and only relevant
 matches are added to a new prompt. The SDK also has an offline-tested tool loop
-that sends registered schemas to Claude, validates every requested call,
+that sends registered schemas to the configured provider, validates every
+requested call,
 dispatches only explicitly registered Python handlers, and returns structured
-results until Claude produces a final answer. The loop policy now lives in a
-provider-neutral agent runtime while Claude only translates one model turn at
-a time. The MCP foundation follows the stateless `2026-07-28` protocol: every
-protocol request carries its own version, client identity, and capabilities.
+results until the model produces a final answer. The loop policy lives in a
+provider-neutral agent runtime while Claude and OpenAI only translate one
+model turn at a time. The MCP foundation follows the stateless `2026-07-28`
+protocol: every protocol request carries its own version, client identity, and
+capabilities.
 Opening a transport does not perform a hidden handshake, and
 `server/discover` remains an explicit optional call. A concrete Streamable HTTP
 transport now maps each operation to a separate POST, accepts JSON or
@@ -133,10 +138,12 @@ RAGConversationManager
     |-- MultiAgentCoordinator -> AgentWorker -> isolated AgentRunner run
     |-- AgentRunner -> AgentState -> AgentEvent
     |                 |-- ToolRegistry -> ToolExecutor -> ToolResult
-    |                 `-- BaseToolLLMClient -> ClaudeClient (one turn)
+    |                 `-- BaseToolLLMClient -> ClaudeClient / OpenAIClient
     |-- LLMAgentPlanner -> AgentPlan -> PlanStep
     |-- LLMAgentReflector -> AgentReflection
-    |-- BaseLLMClient -> ClaudeClient (plain text / streaming)
+    |-- BaseLLMClient -> provider factory
+    |                     |-- ClaudeClient
+    |                     `-- OpenAIClient
     |-- BaseEmbeddingClient -> SentenceTransformerEmbeddingClient
     |-- HybridRetriever -> semantic search + BM25 + rank fusion
     |                       `-- BaseVectorStore
@@ -167,9 +174,9 @@ EvaluationRunner -> EvalCase -> application target
     `-- Evaluator -> EvalScore -> EvalCaseResult -> EvaluationReport
 ```
 
-The domain layer does not know about JSON, filesystem paths, Anthropic, API
-keys, or environment variables. Provider-specific behavior stays inside the
-provider adapter.
+The domain layer does not know about JSON, filesystem paths, Anthropic,
+OpenAI, API keys, or environment variables. Provider-specific behavior stays
+inside the provider adapter.
 
 ## Installation
 
@@ -194,8 +201,11 @@ Install local SentenceTransformer support before using `/index`:
 Copy `.env.example` to `.env` and provide:
 
 ```text
+AI_PROVIDER=anthropic
 ANTHROPIC_API_KEY=...
-MODEL=...
+ANTHROPIC_MODEL=...
+OPENAI_API_KEY=...
+OPENAI_MODEL=...
 MAX_TOKENS=1024
 TIMEOUT=60
 EMBEDDING_MODEL=all-MiniLM-L6-v2
@@ -208,6 +218,30 @@ MEMORY_RETRIEVAL_K=3
 ```
 
 Never commit `.env`, API keys, or real conversation data.
+
+## LLM providers
+
+Set `AI_PROVIDER` to `anthropic` or `openai`. The CLI creates the matching
+adapter while the conversation, RAG, memory, tool, agent, tracing, and eval
+layers remain unchanged. Existing setups may keep using `MODEL` as a fallback,
+but provider-specific model variables are clearer:
+
+```text
+AI_PROVIDER=openai
+OPENAI_API_KEY=...
+OPENAI_MODEL=...
+```
+
+`OpenAIClient` uses the
+[OpenAI Responses API](https://developers.openai.com/api/docs/guides/text),
+including
+[streaming response events](https://developers.openai.com/api/docs/guides/streaming-responses)
+and
+[function calling](https://developers.openai.com/api/docs/guides/function-calling).
+It reconstructs each tool turn locally, sends `store=False`, and does not rely
+on a provider-side conversation ID. This integration requires an OpenAI API
+key and does not reuse a consumer ChatGPT browser session. There is no
+automatic provider fallback or cross-provider routing yet.
 
 ## Run the CLI
 
@@ -259,10 +293,11 @@ required and optional arguments, deterministic JSON Schema export, duplicate
 registration protection, strict unknown-argument rejection, and contained
 handler errors. It does not use dynamic imports, `eval`, or shell execution.
 When a `ToolExecutor` is configured on `ConversationManager` or
-`RAGConversationManager`, Claude may request one or more registered tools in a
-round. Results, including contained validation and execution errors, are sent
-back until Claude returns final text. `AgentRunner` defaults to at most eight
-tool rounds and rejects duplicate call IDs. Its returned `AgentState` contains
+`RAGConversationManager`, Claude or OpenAI may request one or more registered
+tools in a round. Results, including contained validation and execution
+errors, are sent back until the provider returns final text. `AgentRunner`
+defaults to at most eight tool rounds and rejects duplicate call IDs. Its
+returned `AgentState` contains
 ordered `AgentEvent` records and ends with either `final_response` or
 `max_tool_rounds`. Tool traces are transient when using the conversation
 manager; persisted history contains the original user message and final
@@ -457,7 +492,7 @@ chunk count.
 
 After each RAG answer, the CLI prints numbered sources with document ID, chunk
 ID, and fused retrieval score. Local source paths are mapped to citations after
-the model call and are not included in the Claude prompt.
+the model call and are not included in the provider prompt.
 
 ## Tests
 
@@ -492,10 +527,19 @@ RUN_ANTHROPIC_INTEGRATION=1 \
   tests/integration/test_claude_api.py
 ```
 
+The OpenAI smoke test is guarded separately and is also disabled by default:
+
+```bash
+RUN_OPENAI_INTEGRATION=1 \
+  .venv/bin/python -m pytest \
+  -m 'integration and external' \
+  tests/integration/test_openai_api.py
+```
+
 ## Next chapter
 
-Phase 9.3 will derive bounded latency summaries from trace records and add an
-explicit provider-neutral usage/cost input contract. It will report counts,
-duration percentiles, and supplied cost totals without guessing provider
-prices. Regression gates, exporters, and persistent observability storage
-remain later opt-in layers rather than core runtime requirements.
+The next provider step is a Gemini adapter with the same text, streaming, and
+function-calling contract. After that, the existing multi-agent coordinator can
+assign different providers to different workers. Cost/latency summaries,
+regression gates, exporters, and persistent observability storage remain
+optional later work.
