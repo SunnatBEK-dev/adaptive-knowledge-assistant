@@ -6,7 +6,7 @@ and small abstractions over framework-specific magic.
 
 ## Current status
 
-The application architecture foundation is complete through Agents phase 6.1:
+The application architecture foundation is complete through Agents phase 6.2:
 
 - conversation and message domain models;
 - JSON repository abstraction;
@@ -23,6 +23,8 @@ The application architecture foundation is complete through Agents phase 6.1:
 - optional tool-enabled conversation and RAG orchestration;
 - provider-neutral `AgentRunner` loop policy;
 - explicit agent state, iteration events, and termination reasons;
+- provider-neutral LLM planner with strict bounded JSON output;
+- ordered plan steps with controlled status transitions and outcomes;
 - Anthropic/Claude adapter behind an LLM contract;
 - provider-neutral embedding-client contract;
 - lazy SentenceTransformer embedding adapter;
@@ -80,6 +82,7 @@ RAGConversationManager
     |-- AgentRunner -> AgentState -> AgentEvent
     |                 |-- ToolRegistry -> ToolExecutor -> ToolResult
     |                 `-- BaseToolLLMClient -> ClaudeClient (one turn)
+    |-- LLMAgentPlanner -> AgentPlan -> PlanStep
     |-- BaseLLMClient -> ClaudeClient (plain text / streaming)
     |-- BaseEmbeddingClient -> SentenceTransformerEmbeddingClient
     |-- HybridRetriever -> semantic search + BM25 + rank fusion
@@ -198,6 +201,14 @@ callback. Tool-enabled streaming is intentionally unsupported for now, so use
 `send_message()` for this workflow. The SDK does not register application
 tools automatically—the host application owns that allow-list.
 
+`LLMAgentPlanner` is an opt-in provider-neutral planning layer. It asks any
+`BaseLLMClient` for a bounded JSON list of unique steps and converts that list
+into an `AgentPlan`. Plans expose only controlled sequential transitions from
+`pending` to `in_progress`, then `completed` or `failed`, with an optional
+outcome stored for each completed step. Planning does not automatically execute
+steps or re-plan: the host application explicitly passes each active step to
+`AgentRunner`, which keeps planning policy separate from tool execution.
+
 The default ingestion layer supports UTF-8 `.txt`, `.md`, `.markdown`, and
 `.rst` files. Directory synchronization scans recursively in deterministic
 path order, skips unsupported formats, and persists content hashes plus the
@@ -243,6 +254,7 @@ RUN_ANTHROPIC_INTEGRATION=1 \
 
 ## Next chapter
 
-The next Agents phase is a small provider-neutral planner with explicit plan
-steps and statuses. It will build on `AgentState` without adding reflection or
-multi-agent coordination until the single-agent planning contract is stable.
+The next Agents phase is bounded reflection over an `AgentState` or completed
+`AgentPlan`. Reflection will produce structured feedback without silently
+retrying work or mutating the original run; automatic retries and multi-agent
+coordination remain later concerns.

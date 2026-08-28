@@ -5,6 +5,16 @@ from ai_sdk.agents.model import (
     AgentStopReason,
     AgentTextBlock,
 )
+from ai_sdk.agents.plan import (
+    AgentPlan,
+    PlanStatus,
+    PlanStep,
+    PlanValidationError,
+)
+from ai_sdk.agents.planner import (
+    BaseAgentPlanner,
+    LLMAgentPlanner,
+)
 from ai_sdk.agents.runner import (
     AgentEventHandler,
     AgentRunner,
@@ -13,6 +23,7 @@ from ai_sdk.agents.state import AgentState
 
 
 __all__ = [
+    "AgentPlan",
     "AgentEvent",
     "AgentEventHandler",
     "AgentModelResponse",
@@ -21,4 +32,9 @@ __all__ = [
     "AgentState",
     "AgentStopReason",
     "AgentTextBlock",
+    "BaseAgentPlanner",
+    "LLMAgentPlanner",
+    "PlanStatus",
+    "PlanStep",
+    "PlanValidationError",
 ]
