@@ -11,6 +11,7 @@ from ai_sdk.mcp import (
     MCPClient,
     MCPHTTPError,
     MCPImplementation,
+    MCPInputRequiredResult,
     MCPRemoteError,
     MCPRequestContext,
     MCPResourceReadRequest,
@@ -1036,3 +1037,175 @@ def test_transport_validates_config_and_lifecycle():
     transport.close()
     with pytest.raises(MCPHTTPError, match="not open"):
         transport.discover(make_context(), timeout_seconds=1)
+
+
+def test_tool_input_required_and_retry_use_new_id_and_exact_state():
+    request_state = "opaque:\u2603:  "
+    opener = FakeOpener(
+        FakeResponse(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {
+                    "resultType": "input_required",
+                    "inputRequests": {
+                        "confirm": {
+                            "method": "elicitation/create",
+                            "params": {
+                                "mode": "form",
+                                "message": "Delete files?",
+                                "requestedSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "approved": {
+                                            "type": "boolean"
+                                        }
+                                    },
+                                },
+                            },
+                        }
+                    },
+                    "requestState": request_state,
+                },
+            }
+        ),
+        result_response(
+            {
+                "content": [{"type": "text", "text": "deleted"}],
+                "isError": False,
+            },
+            request_id=2,
+        ),
+    )
+    transport = StreamableHTTPTransport(
+        "https://example.com/mcp",
+        opener=opener,
+    )
+    transport.open(timeout_seconds=1)
+    original = MCPToolRequest("delete", {"count": 3})
+
+    required = transport.call_tool(
+        make_context(),
+        original,
+        timeout_seconds=1,
+    )
+    responses = {"confirm": {"action": "accept"}}
+    retry = MCPToolRequest(
+        original.name,
+        original.arguments,
+        input_responses=responses,
+        request_state=required.request_state,
+    )
+    responses["confirm"]["action"] = "cancel"
+    complete = transport.call_tool(
+        make_context(),
+        retry,
+        timeout_seconds=1,
+    )
+
+    assert isinstance(required, MCPInputRequiredResult)
+    assert required.input_requests["confirm"].params["message"] == (
+        "Delete files?"
+    )
+    assert required.request_state == request_state
+    assert complete.content[0].data["text"] == "deleted"
+    first = json.loads(opener.calls[0][0].data)
+    second = json.loads(opener.calls[1][0].data)
+    assert first["id"] == 1
+    assert second["id"] == 2
+    assert "inputResponses" not in first["params"]
+    assert second["params"]["inputResponses"] == {
+        "confirm": {"action": "accept"}
+    }
+    assert second["params"]["requestState"] == request_state
+
+
+def test_sse_can_end_with_input_required_resource_result():
+    body = (
+        b'data: {"jsonrpc":"2.0","id":1,"result":'
+        b'{"resultType":"input_required","requestState":"next"}}\n\n'
+    )
+    transport = StreamableHTTPTransport(
+        "https://example.com/mcp",
+        opener=FakeOpener(
+            FakeResponse(
+                body,
+                content_type="text/event-stream",
+                raw=True,
+            )
+        ),
+    )
+    transport.open(timeout_seconds=1)
+
+    result = transport.read_resource(
+        make_context(),
+        MCPResourceReadRequest("file:///large.txt"),
+        timeout_seconds=1,
+    )
+
+    assert isinstance(result, MCPInputRequiredResult)
+    assert result.input_requests == {}
+    assert result.request_state == "next"
+
+
+@pytest.mark.parametrize(
+    ("incomplete", "message"),
+    [
+        ({"inputRequests": []}, "inputRequests"),
+        ({"inputRequests": None}, "inputRequests"),
+        (
+            {
+                "inputRequests": {
+                    "": {
+                        "method": "roots/list",
+                        "params": {},
+                    }
+                }
+            },
+            "invalid request",
+        ),
+        (
+            {
+                "inputRequests": {
+                    "one": {"method": "roots/list"}
+                }
+            },
+            "invalid request",
+        ),
+        (
+            {
+                "inputRequests": {
+                    "one": {
+                        "method": "unknown/request",
+                        "params": {},
+                    }
+                }
+            },
+            "invalid request",
+        ),
+        ({"requestState": 1}, "requestState"),
+    ],
+)
+def test_input_required_framing_is_strict(incomplete, message):
+    response = FakeResponse(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "resultType": "input_required",
+                **incomplete,
+            },
+        }
+    )
+    transport = StreamableHTTPTransport(
+        "https://example.com/mcp",
+        opener=FakeOpener(response),
+    )
+    transport.open(timeout_seconds=1)
+
+    with pytest.raises(MCPHTTPError, match=message):
+        transport.call_tool(
+            make_context(),
+            MCPToolRequest("interactive"),
+            timeout_seconds=1,
+        )

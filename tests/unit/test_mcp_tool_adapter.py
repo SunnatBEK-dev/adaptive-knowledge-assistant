@@ -9,6 +9,8 @@ from ai_sdk.mcp import (
     MCPContentBlock,
     MCPDiscoveryResult,
     MCPImplementation,
+    MCPInputRequest,
+    MCPInputRequiredResult,
     MCPResourcePage,
     MCPResourceReadResult,
     MCPServerCapabilities,
@@ -78,11 +80,12 @@ class AdapterTransport(BaseMCPTransport):
         pass
 
 
-def make_client():
+def make_client(**kwargs):
     transport = AdapterTransport()
     client = MCPClient(
         transport,
         client_info=MCPImplementation("adapter-test", "1.0"),
+        **kwargs,
     )
     return client, transport
 
@@ -191,6 +194,36 @@ def test_adapter_preserves_remote_tool_error_content():
 
     assert result.content == "remote validation failed"
     assert result.is_error
+
+
+def test_adapter_contains_tools_that_require_manual_host_input():
+    client, transport = make_client(
+        client_capabilities={"elicitation": {}},
+    )
+    transport.tool_result = MCPInputRequiredResult(
+        {
+            "confirm": MCPInputRequest(
+                "elicitation/create",
+                {"message": "Continue?", "requestedSchema": {}},
+            )
+        }
+    )
+    registry = ToolRegistry()
+    MCPToolAdapter(client).register_approved(
+        registry,
+        [make_tool()],
+        approved_names=["search_docs"],
+    )
+    client.open()
+
+    result = ToolExecutor(registry).execute(
+        ToolCall("call-1", "search_docs", {"query": "Python"})
+    )
+
+    assert result.is_error
+    assert result.content == (
+        "Remote MCP tool requires explicit host input."
+    )
 
 
 @pytest.mark.parametrize(

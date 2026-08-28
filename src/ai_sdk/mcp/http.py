@@ -17,6 +17,8 @@ from ai_sdk.mcp.model import (
     MCPContentBlock,
     MCPDiscoveryResult,
     MCPImplementation,
+    MCPInputRequest,
+    MCPInputRequiredResult,
     MCPRequestContext,
     MCPResource,
     MCPResourceContent,
@@ -154,18 +156,23 @@ class StreamableHTTPTransport(BaseMCPTransport):
         request: MCPToolRequest,
         *,
         timeout_seconds: float,
-    ) -> MCPToolResult:
+    ) -> MCPToolResult | MCPInputRequiredResult:
+        params: dict[str, object] = {
+            "name": request.name,
+            "arguments": request.arguments,
+        }
+        self._add_retry_params(params, request)
         result = self._post(
             context,
             method="tools/call",
             name=request.name,
-            params={
-                "name": request.name,
-                "arguments": request.arguments,
-            },
+            params=params,
             timeout_seconds=timeout_seconds,
             extra_headers=self._tool_headers(request),
+            allow_input_required=True,
         )
+        if isinstance(result, MCPInputRequiredResult):
+            return result
         return self._parse_tool_result(result)
 
     def read_resource(
@@ -174,18 +181,33 @@ class StreamableHTTPTransport(BaseMCPTransport):
         request: MCPResourceReadRequest,
         *,
         timeout_seconds: float,
-    ) -> MCPResourceReadResult:
+    ) -> MCPResourceReadResult | MCPInputRequiredResult:
+        params: dict[str, object] = {"uri": request.uri}
+        self._add_retry_params(params, request)
         result = self._post(
             context,
             method="resources/read",
             name=request.uri,
-            params={"uri": request.uri},
+            params=params,
             timeout_seconds=timeout_seconds,
+            allow_input_required=True,
         )
+        if isinstance(result, MCPInputRequiredResult):
+            return result
         return self._parse_resource_result(result)
 
     def close(self) -> None:
         self._is_open = False
+
+    @staticmethod
+    def _add_retry_params(
+        params: dict[str, object],
+        request: MCPToolRequest | MCPResourceReadRequest,
+    ) -> None:
+        if request.input_responses:
+            params["inputResponses"] = request.input_responses
+        if request.request_state is not None:
+            params["requestState"] = request.request_state
 
     def _post(
         self,
@@ -196,7 +218,8 @@ class StreamableHTTPTransport(BaseMCPTransport):
         timeout_seconds: float,
         name: str | None = None,
         extra_headers: Mapping[str, str] | None = None,
-    ) -> Mapping[str, object]:
+        allow_input_required: bool = False,
+    ) -> Mapping[str, object] | MCPInputRequiredResult:
         self._require_open()
         request_id = self._next_request_id()
         body_params = dict(params)
@@ -250,6 +273,7 @@ class StreamableHTTPTransport(BaseMCPTransport):
                     error,
                     request_id=request_id,
                     status=error.code,
+                    allow_input_required=allow_input_required,
                 )
         except URLError as error:
             if isinstance(error.reason, TimeoutError):
@@ -273,6 +297,7 @@ class StreamableHTTPTransport(BaseMCPTransport):
                 response,
                 request_id=request_id,
                 status=status,
+                allow_input_required=allow_input_required,
             )
 
     def _decode_response(
@@ -281,7 +306,8 @@ class StreamableHTTPTransport(BaseMCPTransport):
         *,
         request_id: int,
         status: int,
-    ) -> Mapping[str, object]:
+        allow_input_required: bool,
+    ) -> Mapping[str, object] | MCPInputRequiredResult:
         raw = response.read(self._max_response_bytes + 1)
         if len(raw) > self._max_response_bytes:
             raise MCPHTTPError(
@@ -293,7 +319,11 @@ class StreamableHTTPTransport(BaseMCPTransport):
             if content_type == "application/json" and raw:
                 try:
                     message = self._decode_json(raw)
-                    self._parse_envelope(message, request_id)
+                    self._parse_envelope(
+                        message,
+                        request_id,
+                        allow_input_required=allow_input_required,
+                    )
                 except MCPTransportResponseError:
                     raise
                 except Exception:
@@ -304,9 +334,17 @@ class StreamableHTTPTransport(BaseMCPTransport):
 
         if content_type == "application/json":
             message = self._decode_json(raw)
-            return self._parse_envelope(message, request_id)
+            return self._parse_envelope(
+                message,
+                request_id,
+                allow_input_required=allow_input_required,
+            )
         if content_type == "text/event-stream":
-            return self._decode_sse(raw, request_id)
+            return self._decode_sse(
+                raw,
+                request_id,
+                allow_input_required=allow_input_required,
+            )
         raise MCPHTTPError(
             "MCP HTTP response content type is unsupported."
         )
@@ -324,7 +362,9 @@ class StreamableHTTPTransport(BaseMCPTransport):
         self,
         raw: bytes,
         request_id: int,
-    ) -> Mapping[str, object]:
+        *,
+        allow_input_required: bool,
+    ) -> Mapping[str, object] | MCPInputRequiredResult:
         try:
             text = raw.decode("utf-8")
         except UnicodeDecodeError as error:
@@ -332,7 +372,9 @@ class StreamableHTTPTransport(BaseMCPTransport):
                 "MCP SSE response is not valid UTF-8."
             ) from error
 
-        final_result: Mapping[str, object] | None = None
+        final_result: (
+            Mapping[str, object] | MCPInputRequiredResult | None
+        ) = None
         for data in self._sse_data_events(text):
             message = self._decode_json(data.encode("utf-8"))
             if final_result is not None:
@@ -348,6 +390,7 @@ class StreamableHTTPTransport(BaseMCPTransport):
             final_result = self._parse_envelope(
                 message,
                 request_id,
+                allow_input_required=allow_input_required,
             )
         if final_result is None:
             raise MCPHTTPError(
@@ -397,7 +440,9 @@ class StreamableHTTPTransport(BaseMCPTransport):
     def _parse_envelope(
         message: object,
         request_id: int,
-    ) -> Mapping[str, object]:
+        *,
+        allow_input_required: bool,
+    ) -> Mapping[str, object] | MCPInputRequiredResult:
         if not isinstance(message, Mapping):
             raise MCPHTTPError(
                 "MCP JSON-RPC response must be an object."
@@ -444,12 +489,64 @@ class StreamableHTTPTransport(BaseMCPTransport):
                 "MCP JSON-RPC result must be an object."
             )
         result_type = result.get("resultType", "complete")
+        if result_type == "input_required":
+            if not allow_input_required:
+                raise MCPHTTPError(
+                    "MCP input_required result is unsupported for this "
+                    "operation."
+                )
+            return StreamableHTTPTransport._parse_input_required(
+                result
+            )
         if result_type != "complete":
             raise MCPHTTPError(
                 "MCP result type is unsupported: "
                 f"{result_type}."
             )
         return result
+
+    @staticmethod
+    def _parse_input_required(
+        result: Mapping[str, object],
+    ) -> MCPInputRequiredResult:
+        raw_requests = result.get("inputRequests")
+        requests: dict[str, MCPInputRequest] = {}
+        if "inputRequests" in result:
+            if not isinstance(raw_requests, Mapping):
+                raise MCPHTTPError(
+                    "MCP inputRequests must be an object."
+                )
+            for key, raw_request in raw_requests.items():
+                if (
+                    not isinstance(key, str)
+                    or not key.strip()
+                    or not isinstance(raw_request, Mapping)
+                    or not isinstance(raw_request.get("params"), Mapping)
+                ):
+                    raise MCPHTTPError(
+                        "MCP inputRequests contains an invalid request."
+                    )
+                try:
+                    requests[key] = MCPInputRequest(
+                        raw_request.get("method"),
+                        raw_request["params"],
+                    )
+                except (TypeError, ValueError) as error:
+                    raise MCPHTTPError(
+                        "MCP inputRequests contains an invalid request."
+                    ) from error
+        request_state = result.get("requestState")
+        if "requestState" in result and not isinstance(
+            request_state,
+            str,
+        ):
+            raise MCPHTTPError(
+                "MCP requestState must be an opaque string."
+            )
+        return MCPInputRequiredResult(
+            requests,
+            request_state=request_state,
+        )
 
     @staticmethod
     def _parse_discovery(

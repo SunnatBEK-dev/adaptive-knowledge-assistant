@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 
 from ai_sdk.mcp.model import (
     MCPDiscoveryResult,
+    MCPInputRequiredResult,
     MCPRequestContext,
     MCPResourceReadRequest,
     MCPResourceReadResult,
@@ -64,8 +65,8 @@ class BaseMCPTransport(ABC):
         request: MCPToolRequest,
         *,
         timeout_seconds: float,
-    ) -> MCPToolResult:
-        """Perform one complete tools/call request."""
+    ) -> MCPToolResult | MCPInputRequiredResult:
+        """Perform one tools/call request round."""
 
     @abstractmethod
     def read_resource(
@@ -74,8 +75,8 @@ class BaseMCPTransport(ABC):
         request: MCPResourceReadRequest,
         *,
         timeout_seconds: float,
-    ) -> MCPResourceReadResult:
-        """Perform one complete resources/read request."""
+    ) -> MCPResourceReadResult | MCPInputRequiredResult:
+        """Perform one resources/read request round."""
 
     @abstractmethod
     def close(self) -> None:

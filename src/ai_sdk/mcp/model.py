@@ -20,6 +20,11 @@ CLIENT_CAPABILITIES_META_KEY = (
 )
 
 _TOOL_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
+_INPUT_REQUEST_METHODS = {
+    "elicitation/create",
+    "sampling/createMessage",
+    "roots/list",
+}
 
 
 class MCPValidationError(ValueError):
@@ -109,6 +114,36 @@ def _validate_tool_name(name: object) -> str:
             "digits, underscores, hyphens, or dots."
         )
     return name
+
+
+def _copy_input_responses(
+    value: Mapping[str, Mapping[str, object]] | None,
+) -> dict[str, dict[str, object]]:
+    if value is None:
+        return {}
+    copied = _copy_mapping(value, "input responses")
+    normalized: dict[str, dict[str, object]] = {}
+    for key, response in copied.items():
+        if not key.strip() or not isinstance(response, Mapping):
+            raise MCPValidationError(
+                "MCP input responses must map non-empty keys to objects."
+            )
+        normalized[key] = _copy_mapping(
+            response,
+            f"input response {key}",
+        )
+        _copy_json_value(normalized[key], f"input response {key}")
+    return normalized
+
+
+def _optional_request_state(value: object) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise MCPValidationError(
+            "MCP request state must be an opaque string."
+        )
+    return value
 
 
 def _validate_uri(uri: object, field_name: str) -> str:
@@ -443,14 +478,125 @@ class MCPResourcePage:
 
 
 @dataclass(frozen=True, init=False)
+class MCPInputRequest:
+    method: str
+    params: dict[str, object]
+
+    def __init__(
+        self,
+        method: str,
+        params: Mapping[str, object],
+    ) -> None:
+        if method not in _INPUT_REQUEST_METHODS:
+            raise MCPValidationError(
+                "MCP input request method is unsupported."
+            )
+        normalized_params = _copy_mapping(
+            params,
+            "input request parameters",
+        )
+        _copy_json_value(
+            normalized_params,
+            "input request parameters",
+        )
+        object.__setattr__(self, "method", method)
+        object.__setattr__(self, "params", normalized_params)
+
+
+@dataclass(frozen=True, init=False)
+class MCPInputRequiredResult:
+    input_requests: dict[str, MCPInputRequest]
+    request_state: str | None
+
+    def __init__(
+        self,
+        input_requests: Mapping[str, MCPInputRequest] | None = None,
+        *,
+        request_state: str | None = None,
+    ) -> None:
+        normalized: dict[str, MCPInputRequest] = {}
+        if input_requests is not None:
+            if not isinstance(input_requests, Mapping):
+                raise MCPValidationError(
+                    "MCP input requests must be an object."
+                )
+            for key, request in input_requests.items():
+                if (
+                    not isinstance(key, str)
+                    or not key.strip()
+                    or not isinstance(request, MCPInputRequest)
+                ):
+                    raise MCPValidationError(
+                        "MCP input requests must map non-empty keys to "
+                        "requests."
+                    )
+                normalized[key] = request
+        object.__setattr__(self, "input_requests", normalized)
+        object.__setattr__(
+            self,
+            "request_state",
+            _optional_request_state(request_state),
+        )
+
+
+@dataclass(frozen=True, init=False)
+class MCPContinuation:
+    continuation_id: str
+    operation: str
+    input_requests: dict[str, MCPInputRequest]
+    round: int
+
+    def __init__(
+        self,
+        continuation_id: str,
+        operation: str,
+        input_requests: Mapping[str, MCPInputRequest],
+        *,
+        round: int,
+    ) -> None:
+        validated_id = _require_text(
+            continuation_id,
+            "continuation ID",
+        )
+        if operation not in {"tools/call", "resources/read"}:
+            raise MCPValidationError(
+                "MCP continuation operation is unsupported."
+            )
+        if (
+            not isinstance(round, int)
+            or isinstance(round, bool)
+            or round <= 0
+        ):
+            raise MCPValidationError(
+                "MCP continuation round must be positive."
+            )
+        normalized = MCPInputRequiredResult(
+            input_requests
+        ).input_requests
+        object.__setattr__(self, "continuation_id", validated_id)
+        object.__setattr__(self, "operation", operation)
+        object.__setattr__(self, "input_requests", normalized)
+        object.__setattr__(self, "round", round)
+
+
+@dataclass(frozen=True, init=False)
 class MCPToolRequest:
     name: str
     arguments: dict[str, object]
+    input_responses: dict[str, dict[str, object]]
+    request_state: str | None
 
     def __init__(
         self,
         name: str,
         arguments: Mapping[str, object] | None = None,
+        *,
+        input_responses: Mapping[
+            str,
+            Mapping[str, object],
+        ]
+        | None = None,
+        request_state: str | None = None,
     ) -> None:
         validated_arguments = _copy_mapping(
             {} if arguments is None else arguments,
@@ -459,6 +605,16 @@ class MCPToolRequest:
         _copy_json_value(validated_arguments, "tool arguments")
         object.__setattr__(self, "name", _validate_tool_name(name))
         object.__setattr__(self, "arguments", validated_arguments)
+        object.__setattr__(
+            self,
+            "input_responses",
+            _copy_input_responses(input_responses),
+        )
+        object.__setattr__(
+            self,
+            "request_state",
+            _optional_request_state(request_state),
+        )
 
 
 @dataclass(frozen=True, init=False)
@@ -563,12 +719,34 @@ class MCPToolResult:
 @dataclass(frozen=True, init=False)
 class MCPResourceReadRequest:
     uri: str
+    input_responses: dict[str, dict[str, object]]
+    request_state: str | None
 
-    def __init__(self, uri: str) -> None:
+    def __init__(
+        self,
+        uri: str,
+        *,
+        input_responses: Mapping[
+            str,
+            Mapping[str, object],
+        ]
+        | None = None,
+        request_state: str | None = None,
+    ) -> None:
         object.__setattr__(
             self,
             "uri",
             _validate_uri(uri, "resource URI"),
+        )
+        object.__setattr__(
+            self,
+            "input_responses",
+            _copy_input_responses(input_responses),
+        )
+        object.__setattr__(
+            self,
+            "request_state",
+            _optional_request_state(request_state),
         )
 
 

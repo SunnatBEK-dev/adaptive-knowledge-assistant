@@ -9,9 +9,14 @@ from ai_sdk.mcp import (
     MCPCapabilityError,
     MCPClient,
     MCPConnectionState,
+    MCPContinuation,
+    MCPContinuationError,
     MCPContentBlock,
     MCPDiscoveryResult,
     MCPImplementation,
+    MCPInputRequest,
+    MCPInputRequiredResult,
+    MCPInputRoundsExceededError,
     MCPLifecycleError,
     MCPProtocolError,
     MCPRequestContext,
@@ -23,6 +28,7 @@ from ai_sdk.mcp import (
     MCPTimeoutError,
     MCPTool,
     MCPToolPage,
+    MCPToolRequest,
     MCPToolResult,
     MCPTransportError,
     MCPValidationError,
@@ -143,6 +149,31 @@ def make_client(transport=None, **kwargs):
         client_info=MCPImplementation("test-client", "2.0"),
         timeout_seconds=timeout_seconds,
         **kwargs,
+    )
+
+
+def input_required(
+    *,
+    request_state="opaque-state",
+    method="elicitation/create",
+):
+    return MCPInputRequiredResult(
+        {
+            "confirm": MCPInputRequest(
+                method,
+                {
+                    "mode": "form",
+                    "message": "Continue?",
+                    "requestedSchema": {
+                        "type": "object",
+                        "properties": {
+                            "approved": {"type": "boolean"}
+                        },
+                    },
+                },
+            )
+        },
+        request_state=request_state,
     )
 
 
@@ -595,6 +626,12 @@ def test_client_rejects_invalid_timeout(timeout):
         make_client(timeout_seconds=timeout)
 
 
+@pytest.mark.parametrize("rounds", [0, -1, True, 1.5])
+def test_client_rejects_invalid_input_round_limit(rounds):
+    with pytest.raises(MCPValidationError, match="input rounds"):
+        make_client(max_input_rounds=rounds)
+
+
 @pytest.mark.parametrize("cursor", ["", " ", 1])
 def test_client_rejects_invalid_cursor_without_transport_call(cursor):
     transport = RecordingTransport()
@@ -700,6 +737,32 @@ def test_resource_rejects_invalid_fields(uri, name, size, message):
         lambda: MCPToolResult(
             structured_content=float("nan")
         ),
+        lambda: MCPToolRequest(
+            "tool",
+            input_responses={"": {}},
+        ),
+        lambda: MCPToolRequest("tool", request_state=1),
+        lambda: MCPInputRequiredResult([]),
+        lambda: MCPInputRequiredResult(
+            {
+                "": MCPInputRequest(
+                    "roots/list",
+                    {},
+                )
+            }
+        ),
+        lambda: MCPContinuation(
+            "continuation",
+            "tools/list",
+            {},
+            round=1,
+        ),
+        lambda: MCPContinuation(
+            "continuation",
+            "tools/call",
+            {},
+            round=0,
+        ),
         lambda: MCPResourceContent(
             "file:///resource",
         ),
@@ -731,3 +794,137 @@ def test_resource_rejects_invalid_fields(uri, name, size, message):
 def test_models_reject_invalid_contracts(factory):
     with pytest.raises(MCPValidationError):
         factory()
+
+
+def test_tool_input_required_is_manual_and_retry_echoes_state_once():
+    transport = RecordingTransport()
+    transport.tool_result = input_required()
+    client = make_client(
+        transport,
+        client_capabilities={"elicitation": {}},
+    )
+    client.open()
+
+    continuation = client.call_tool(
+        "delete_files",
+        {"count": 3},
+    )
+
+    assert isinstance(continuation, MCPContinuation)
+    assert continuation.operation == "tools/call"
+    assert continuation.round == 1
+    assert continuation.input_requests["confirm"].method == (
+        "elicitation/create"
+    )
+    assert not hasattr(continuation, "request_state")
+
+    transport.tool_result = MCPToolResult(
+        [MCPContentBlock.text("deleted")]
+    )
+    responses = {
+        "confirm": {
+            "action": "accept",
+            "content": {"approved": True},
+        }
+    }
+    result = client.continue_request(continuation, responses)
+    responses["confirm"]["action"] = "cancel"
+
+    assert isinstance(result, MCPToolResult)
+    assert result.content[0].data["text"] == "deleted"
+    _, _, retry, timeout = transport.calls[-1]
+    assert retry.name == "delete_files"
+    assert retry.arguments == {"count": 3}
+    assert retry.input_responses == {
+        "confirm": {
+            "action": "accept",
+            "content": {"approved": True},
+        }
+    }
+    assert retry.request_state == "opaque-state"
+    assert timeout == 2.5
+    assert client.state is MCPConnectionState.OPEN
+
+    with pytest.raises(MCPContinuationError, match="consumed"):
+        client.continue_request(continuation, {})
+
+
+def test_continuation_requires_exact_keys_and_can_be_cancelled():
+    transport = RecordingTransport()
+    transport.resource_read_result = input_required()
+    client = make_client(
+        transport,
+        client_capabilities={"elicitation": {}},
+    )
+    client.open()
+    continuation = client.read_resource("file:///protected.txt")
+
+    with pytest.raises(MCPContinuationError, match="invalid"):
+        client.cancel_continuation(object())
+    with pytest.raises(MCPContinuationError, match="exactly match"):
+        client.continue_request(continuation, {})
+
+    client.cancel_continuation(continuation)
+
+    with pytest.raises(MCPContinuationError, match="consumed"):
+        client.cancel_continuation(continuation)
+    assert client.state is MCPConnectionState.OPEN
+    assert [call[0] for call in transport.calls] == [
+        "open",
+        "read_resource",
+    ]
+
+
+def test_state_only_continuation_retries_resource_without_responses():
+    transport = RecordingTransport()
+    transport.resource_read_result = MCPInputRequiredResult(
+        request_state="state-only"
+    )
+    client = make_client(transport)
+    client.open()
+    continuation = client.read_resource("file:///large.txt")
+    transport.resource_read_result = MCPResourceReadResult(
+        [MCPResourceContent("file:///large.txt", text="ready")]
+    )
+
+    result = client.continue_request(continuation)
+
+    assert isinstance(result, MCPResourceReadResult)
+    retry = transport.calls[-1][2]
+    assert retry.input_responses == {}
+    assert retry.request_state == "state-only"
+
+
+def test_undeclared_input_capability_is_a_protocol_failure():
+    transport = RecordingTransport()
+    transport.tool_result = input_required(method="sampling/createMessage")
+    client = make_client(transport)
+    client.open()
+
+    with pytest.raises(MCPProtocolError, match="undeclared"):
+        client.call_tool("writer")
+
+    assert client.state is MCPConnectionState.FAILED
+    assert transport.calls[-1] == ("close",)
+
+
+def test_input_round_limit_stops_without_closing_transport():
+    transport = RecordingTransport()
+    transport.tool_result = input_required()
+    client = make_client(
+        transport,
+        client_capabilities={"elicitation": {}},
+        max_input_rounds=1,
+    )
+    client.open()
+    continuation = client.call_tool("interactive")
+
+    with pytest.raises(MCPInputRoundsExceededError, match="limit"):
+        client.continue_request(
+            continuation,
+            {"confirm": {"action": "decline"}},
+        )
+
+    assert client.state is MCPConnectionState.OPEN
+    with pytest.raises(MCPContinuationError, match="consumed"):
+        client.continue_request(continuation, {})

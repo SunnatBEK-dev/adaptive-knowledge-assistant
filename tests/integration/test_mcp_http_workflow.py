@@ -7,6 +7,7 @@ import pytest
 
 from ai_sdk.mcp import (
     MCPClient,
+    MCPContinuation,
     MCPImplementation,
     MCPToolAdapter,
     StreamableHTTPTransport,
@@ -47,11 +48,12 @@ class LocalMCPHandler(BaseHTTPRequestHandler):
             }
         )
         result = self._result(method, params)
+        result_type = result.pop("resultType", "complete")
         body = json.dumps(
             {
                 "jsonrpc": "2.0",
                 "id": payload["id"],
-                "result": {"resultType": "complete", **result},
+                "result": {"resultType": result_type, **result},
             }
         ).encode()
         self.send_response(200)
@@ -105,6 +107,36 @@ class LocalMCPHandler(BaseHTTPRequestHandler):
                 "isError": False,
             }
         if method == "resources/read":
+            if "inputResponses" not in params:
+                return {
+                    "resultType": "input_required",
+                    "inputRequests": {
+                        "confirm_read": {
+                            "method": "elicitation/create",
+                            "params": {
+                                "mode": "form",
+                                "message": "Read the protected guide?",
+                                "requestedSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "approved": {
+                                            "type": "boolean"
+                                        }
+                                    },
+                                    "required": ["approved"],
+                                },
+                            },
+                        }
+                    },
+                    "requestState": "local-opaque-state",
+                }
+            assert params["inputResponses"] == {
+                "confirm_read": {
+                    "action": "accept",
+                    "content": {"approved": True},
+                }
+            }
+            assert params["requestState"] == "local-opaque-state"
             return {
                 "contents": [
                     {
@@ -140,6 +172,7 @@ def test_local_streamable_http_approved_tool_and_resource_workflow():
     client = MCPClient(
         transport,
         client_info=MCPImplementation("integration-client", "1.0"),
+        client_capabilities={"elicitation": {}},
         timeout_seconds=3,
     )
 
@@ -160,8 +193,18 @@ def test_local_streamable_http_approved_tool_and_resource_workflow():
                     {"query": "Python", "tenant": "local"},
                 )
             )
-            resource = client.read_resource(
+            continuation = client.read_resource(
                 "file:///guides/python.md"
+            )
+            assert isinstance(continuation, MCPContinuation)
+            resource = client.continue_request(
+                continuation,
+                {
+                    "confirm_read": {
+                        "action": "accept",
+                        "content": {"approved": True},
+                    }
+                },
             )
     finally:
         server.shutdown()
@@ -188,5 +231,9 @@ def test_local_streamable_http_approved_tool_and_resource_workflow():
         {
             "method": "resources/read",
             "authorization": "Bearer local-4",
+        },
+        {
+            "method": "resources/read",
+            "authorization": "Bearer local-5",
         },
     ]

@@ -7,7 +7,7 @@ and small abstractions over framework-specific magic.
 ## Current status
 
 The application architecture foundation is complete through Agents and MCP
-phase 8.3:
+phase 8.4:
 
 - conversation and message domain models;
 - JSON repository abstraction;
@@ -45,6 +45,9 @@ phase 8.3:
 - fresh per-request MCP authorization injection;
 - safe MCP routing headers and approved `x-mcp-header` argument mirroring;
 - bounded HTTP responses, disabled redirects, and contained network errors;
+- manual MCP multi round-trip continuations for tools and resources;
+- opaque request-state echoing with fresh JSON-RPC request identifiers;
+- exact input-response matching, one-use continuations, and bounded rounds;
 - Anthropic/Claude adapter behind an LLM contract;
 - provider-neutral embedding-client contract;
 - lazy SentenceTransformer embedding adapter;
@@ -94,6 +97,10 @@ Opening a transport does not perform a hidden handshake, and
 transport now maps each operation to a separate POST, accepts JSON or
 request-scoped SSE responses, validates JSON-RPC identifiers and result
 framing, and obtains authorization immediately before each request.
+When a tool call or resource read needs host input, the SDK returns a local
+continuation instead of answering automatically. The host can inspect the
+requested interaction, gather an approved response, resume it once, or cancel
+it locally.
 
 ## Architecture
 
@@ -129,7 +136,8 @@ MCPClient -> MCPRequestContext
         |-- ordered MCPToolPage
         |-- ordered MCPResourcePage
         |-- MCPToolRequest -> MCPToolResult
-        `-- MCPResourceReadRequest -> MCPResourceReadResult
+        |-- MCPResourceReadRequest -> MCPResourceReadResult
+        `-- input_required -> MCPContinuation -> continue_request
 
 MCPToolAdapter -> approved compatible MCPTool -> ToolRegistry
     `-- ToolExecutor -> MCPClient.call_tool
@@ -280,6 +288,16 @@ request another page or cache a result. `tools/call` preserves text, non-text,
 structured, and remote error results. `resources/read` preserves multiple text
 or binary content items plus cache hints.
 
+`tools/call` and `resources/read` may instead return `MCPContinuation` when the
+server responds with `resultType: input_required`. The continuation exposes
+the requested elicitation, sampling, or roots operations but keeps the
+server's `requestState` opaque. `continue_request()` requires responses whose
+keys exactly match the outstanding requests, echoes the state unchanged, and
+uses a new JSON-RPC request ID. Each continuation is consumed once;
+`cancel_continuation()` discards it locally. A logical request defaults to at
+most ten input-required rounds, and every network retry uses the client's
+normal request timeout. No server request is answered automatically.
+
 `StreamableHTTPTransport` is the dependency-free concrete network adapter. It
 sends every operation as a new POST with matching protocol metadata and
 `MCP-Protocol-Version`, `Mcp-Method`, and, where required, `Mcp-Name` headers.
@@ -307,6 +325,12 @@ client = MCPClient(
 
 with client:
     tools = client.list_tools()
+    outcome = client.call_tool("confirmable_action", {"value": 1})
+    if isinstance(outcome, MCPContinuation):
+        outcome = client.continue_request(
+            outcome,
+            {"confirm": {"action": "accept", "content": {}}},
+        )
 ```
 
 `MCPToolAdapter` never discovers or registers tools automatically. The host
@@ -315,12 +339,14 @@ string, integer, number, and boolean parameter subset are accepted; unsupported
 constraints, nested inputs, incompatible names, missing approvals, and
 registry collisions are rejected before any registry change. Approved remote
 errors remain explicit tool errors, while transport exceptions still expose
-only their exception type.
+only their exception type. The automatic local tool adapter does not collect
+interactive input: it cancels an unexpected continuation and returns a safe
+tool error so the host can use the manual client API instead.
 
 This phase deliberately has no automatic OAuth discovery or token refresh,
 automatic pagination/discovery, legacy MCP protocol fallback, subscriptions,
-or MCP multi round-trip input requests. The authorization callback lets the
-host own credential refresh without exposing secrets to the SDK.
+or automatic multi round-trip fulfillment. The authorization callback lets
+the host own credential refresh without exposing secrets to the SDK.
 
 The default ingestion layer supports UTF-8 `.txt`, `.md`, `.markdown`, and
 `.rst` files. Directory synchronization scans recursively in deterministic
@@ -367,7 +393,8 @@ RUN_ANTHROPIC_INTEGRATION=1 \
 
 ## Next chapter
 
-MCP phase 8.4 will add bounded multi round-trip input-request handling while
-keeping every continuation and user interaction under explicit host control.
-Subscriptions, legacy fallback, and automatic OAuth flows remain optional
-future integrations rather than requirements for the core SDK.
+Phase 9.1 will introduce a provider-neutral trace model for LLM, retrieval,
+tool, agent, and MCP operations. Traces will record bounded timing and outcome
+metadata while keeping prompt contents, credentials, and remote state out by
+default. Subscriptions, legacy MCP fallback, and automatic OAuth flows remain
+optional integrations rather than core requirements.

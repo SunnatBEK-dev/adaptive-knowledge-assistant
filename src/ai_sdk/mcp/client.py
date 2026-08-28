@@ -1,11 +1,15 @@
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from secrets import token_urlsafe
 from typing import TypeVar
 
 from ai_sdk.mcp.model import (
     MCP_PROTOCOL_VERSION,
     MCPConnectionState,
+    MCPContinuation,
     MCPDiscoveryResult,
     MCPImplementation,
+    MCPInputRequiredResult,
     MCPRequestContext,
     MCPResourceReadRequest,
     MCPResourceReadResult,
@@ -54,7 +58,25 @@ class MCPRemoteError(MCPClientError):
         super().__init__(f"MCP server error {code}: {message}")
 
 
+class MCPContinuationError(MCPClientError):
+    """Raised when a local MCP continuation cannot be resumed."""
+
+
+class MCPInputRoundsExceededError(MCPClientError):
+    """Raised when one logical MCP request exceeds its round limit."""
+
+
 ResultT = TypeVar("ResultT")
+MCPRoundRequest = MCPToolRequest | MCPResourceReadRequest
+MCPRoundResult = MCPToolResult | MCPResourceReadResult
+
+
+@dataclass(frozen=True)
+class _PendingContinuation:
+    continuation: MCPContinuation
+    request: MCPRoundRequest
+    request_state: str | None
+    input_keys: frozenset[str]
 
 
 class MCPClient:
@@ -68,6 +90,7 @@ class MCPClient:
         client_capabilities: Mapping[str, object] | None = None,
         protocol_version: str = MCP_PROTOCOL_VERSION,
         timeout_seconds: float = 30.0,
+        max_input_rounds: int = 10,
     ) -> None:
         if not isinstance(transport, BaseMCPTransport):
             raise MCPValidationError("MCP transport is invalid.")
@@ -79,6 +102,14 @@ class MCPClient:
             raise MCPValidationError(
                 "MCP timeout must be greater than zero."
             )
+        if (
+            not isinstance(max_input_rounds, int)
+            or isinstance(max_input_rounds, bool)
+            or max_input_rounds <= 0
+        ):
+            raise MCPValidationError(
+                "MCP maximum input rounds must be positive."
+            )
 
         self._transport = transport
         self._context = MCPRequestContext(
@@ -87,9 +118,14 @@ class MCPClient:
             client_capabilities,
         )
         self._timeout_seconds = float(timeout_seconds)
+        self._max_input_rounds = max_input_rounds
         self._state = MCPConnectionState.NEW
         self._transport_opened = False
         self._discovery: MCPDiscoveryResult | None = None
+        self._pending_continuations: dict[
+            str,
+            _PendingContinuation,
+        ] = {}
 
     @property
     def state(self) -> MCPConnectionState:
@@ -225,7 +261,7 @@ class MCPClient:
         self,
         name: str,
         arguments: Mapping[str, object] | None = None,
-    ) -> MCPToolResult:
+    ) -> MCPToolResult | MCPContinuation:
         self._require_open()
         if (
             self._discovery is not None
@@ -243,13 +279,17 @@ class MCPClient:
                 timeout_seconds=self._timeout_seconds,
             ),
         )
-        if not isinstance(result, MCPToolResult):
-            self._fail_protocol(
-                "MCP tools/call returned an invalid result."
-            )
-        return result
+        return self._process_round_result(
+            "tools/call",
+            request,
+            result,
+            round=1,
+        )
 
-    def read_resource(self, uri: str) -> MCPResourceReadResult:
+    def read_resource(
+        self,
+        uri: str,
+    ) -> MCPResourceReadResult | MCPContinuation:
         self._require_open()
         if (
             self._discovery is not None
@@ -267,11 +307,80 @@ class MCPClient:
                 timeout_seconds=self._timeout_seconds,
             ),
         )
-        if not isinstance(result, MCPResourceReadResult):
-            self._fail_protocol(
-                "MCP resources/read returned an invalid result."
+        return self._process_round_result(
+            "resources/read",
+            request,
+            result,
+            round=1,
+        )
+
+    def continue_request(
+        self,
+        continuation: MCPContinuation,
+        input_responses: Mapping[
+            str,
+            Mapping[str, object],
+        ]
+        | None = None,
+    ) -> MCPRoundResult | MCPContinuation:
+        self._require_open()
+        pending = self._pending_continuation(continuation)
+        if isinstance(pending.request, MCPToolRequest):
+            retry: MCPRoundRequest = MCPToolRequest(
+                pending.request.name,
+                pending.request.arguments,
+                input_responses=input_responses,
+                request_state=pending.request_state,
             )
-        return result
+        else:
+            retry = MCPResourceReadRequest(
+                pending.request.uri,
+                input_responses=input_responses,
+                request_state=pending.request_state,
+            )
+        if set(retry.input_responses) != pending.input_keys:
+            raise MCPContinuationError(
+                "MCP input responses must exactly match the pending "
+                "request keys."
+            )
+
+        self._pending_continuations.pop(
+            continuation.continuation_id
+        )
+        if isinstance(retry, MCPToolRequest):
+            result = self._request(
+                "tools/call continuation",
+                lambda: self._transport.call_tool(
+                    self._context,
+                    retry,
+                    timeout_seconds=self._timeout_seconds,
+                ),
+            )
+        else:
+            result = self._request(
+                "resources/read continuation",
+                lambda: self._transport.read_resource(
+                    self._context,
+                    retry,
+                    timeout_seconds=self._timeout_seconds,
+                ),
+            )
+        return self._process_round_result(
+            continuation.operation,
+            retry,
+            result,
+            round=continuation.round + 1,
+        )
+
+    def cancel_continuation(
+        self,
+        continuation: MCPContinuation,
+    ) -> None:
+        self._require_open()
+        self._pending_continuation(continuation)
+        self._pending_continuations.pop(
+            continuation.continuation_id
+        )
 
     def close(self) -> None:
         if self._state is MCPConnectionState.CLOSED:
@@ -283,6 +392,7 @@ class MCPClient:
         )
         self._transport_opened = False
         self._state = MCPConnectionState.CLOSED
+        self._pending_continuations.clear()
 
         if not should_close_transport:
             return
@@ -325,6 +435,89 @@ class MCPClient:
                 f"MCP {operation} failed: {type(error).__name__}"
             ) from error
 
+    def _process_round_result(
+        self,
+        operation: str,
+        request: MCPRoundRequest,
+        result: object,
+        *,
+        round: int,
+    ) -> MCPRoundResult | MCPContinuation:
+        if isinstance(result, MCPInputRequiredResult):
+            if round > self._max_input_rounds:
+                raise MCPInputRoundsExceededError(
+                    "MCP input-required round limit was exceeded."
+                )
+            self._validate_input_capabilities(result)
+            continuation_id = token_urlsafe(18)
+            while continuation_id in self._pending_continuations:
+                continuation_id = token_urlsafe(18)
+            continuation = MCPContinuation(
+                continuation_id,
+                operation,
+                result.input_requests,
+                round=round,
+            )
+            self._pending_continuations[
+                continuation.continuation_id
+            ] = _PendingContinuation(
+                continuation,
+                request,
+                result.request_state,
+                frozenset(result.input_requests),
+            )
+            return continuation
+        if operation == "tools/call" and isinstance(
+            result,
+            MCPToolResult,
+        ):
+            return result
+        if operation == "resources/read" and isinstance(
+            result,
+            MCPResourceReadResult,
+        ):
+            return result
+        self._fail_protocol(
+            f"MCP {operation} returned an invalid result."
+        )
+
+    def _pending_continuation(
+        self,
+        continuation: object,
+    ) -> _PendingContinuation:
+        if not isinstance(continuation, MCPContinuation):
+            raise MCPContinuationError(
+                "MCP continuation is invalid."
+            )
+        pending = self._pending_continuations.get(
+            continuation.continuation_id
+        )
+        if pending is None or pending.continuation is not continuation:
+            raise MCPContinuationError(
+                "MCP continuation is unknown or already consumed."
+            )
+        return pending
+
+    def _validate_input_capabilities(
+        self,
+        result: MCPInputRequiredResult,
+    ) -> None:
+        capability_by_method = {
+            "elicitation/create": "elicitation",
+            "sampling/createMessage": "sampling",
+            "roots/list": "roots",
+        }
+        missing = {
+            capability_by_method[request.method]
+            for request in result.input_requests.values()
+            if capability_by_method[request.method]
+            not in self._context.client_capabilities
+        }
+        if missing:
+            self._fail_protocol(
+                "MCP server requested an undeclared client capability."
+            )
+
     def _require_open(self) -> None:
         if self._state is not MCPConnectionState.OPEN:
             raise MCPLifecycleError(
@@ -350,4 +543,5 @@ class MCPClient:
         except Exception:
             pass
         self._transport_opened = False
+        self._pending_continuations.clear()
         self._state = MCPConnectionState.FAILED

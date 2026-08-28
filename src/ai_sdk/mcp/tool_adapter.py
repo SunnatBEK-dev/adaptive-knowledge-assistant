@@ -2,7 +2,12 @@ import json
 from collections.abc import Mapping, Sequence
 
 from ai_sdk.mcp.client import MCPClient
-from ai_sdk.mcp.model import MCPContentBlock, MCPTool, MCPToolResult
+from ai_sdk.mcp.model import (
+    MCPContinuation,
+    MCPContentBlock,
+    MCPTool,
+    MCPToolResult,
+)
 from ai_sdk.tools import (
     ToolHandlerError,
     ToolParameter,
@@ -230,6 +235,11 @@ class MCPToolAdapter:
     def _make_handler(self, tool_name: str):
         def handler(**arguments: object) -> str:
             result = self._client.call_tool(tool_name, arguments)
+            if isinstance(result, MCPContinuation):
+                self._client.cancel_continuation(result)
+                raise ToolHandlerError(
+                    "Remote MCP tool requires explicit host input."
+                )
             content = self._render_result(result)
             if result.is_error:
                 raise ToolHandlerError(
