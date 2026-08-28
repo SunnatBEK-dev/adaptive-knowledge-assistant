@@ -5,16 +5,25 @@ from ai_sdk.application.rag_manager import (
     RAGConversationManager,
 )
 from ai_sdk.application.rag_response import Citation
+from ai_sdk.application.modes import ApplicationMode
+from ai_sdk.agents import (
+    HandoffStage,
+    MultiAgentCoordinator,
+    SequentialHandoffCoordinator,
+    create_provider_worker,
+)
 from ai_sdk.config import (
     CHAT_FILE,
     CHUNK_OVERLAP,
     CHUNK_SIZE,
     CONTEXT_SUMMARY_TOKEN_BUDGET,
     CONTEXT_TOKEN_BUDGET,
+    DIRECT_CHAT_DIR,
     EMBEDDING_MODEL,
     MEMORY_FILE,
     MEMORY_RETRIEVAL_K,
     RETRIEVAL_K,
+    SUPER_AI_CHAT_FILE,
     VECTOR_STORE_FILE,
 )
 from ai_sdk.context.prompt_builder import PromptBuilder
@@ -32,7 +41,12 @@ from ai_sdk.ingestion import (
     TextDocumentLoader,
     create_default_ingestor,
 )
-from ai_sdk.llm.factory import create_llm_client
+from ai_sdk.llm.factory import (
+    create_llm_client,
+    normalize_llm_provider,
+)
+from ai_sdk.llm.base import BaseLLMClient
+from ai_sdk.llm.super_ai import SuperAIClient
 from ai_sdk.memory.json_store import JsonMemoryStore
 from ai_sdk.retrieval.chunker import TextChunker
 from ai_sdk.retrieval.document import Document
@@ -146,9 +160,25 @@ def load_documents(
     return create_default_ingestor().ingest(path)
 
 
-def build_manager() -> RAGConversationManager:
+def build_manager(
+    *,
+    provider: str | None = None,
+    conversation_file: Path = CHAT_FILE,
+    client: BaseLLMClient | None = None,
+) -> RAGConversationManager:
+    if provider is not None and client is not None:
+        raise ValueError(
+            "Configure either a provider or an explicit client."
+        )
+    if client is not None and not isinstance(
+        client,
+        BaseLLMClient,
+    ):
+        raise TypeError(
+            "Explicit client must be a BaseLLMClient."
+        )
     repository = JsonConversationRepository(
-        CHAT_FILE
+        conversation_file
     )
     conversation = repository.load()
     embedding_client = (
@@ -178,7 +208,11 @@ def build_manager() -> RAGConversationManager:
                 )
             ),
         ),
-        client=create_llm_client(),
+        client=(
+            create_llm_client(provider)
+            if client is None
+            else client
+        ),
         repository=repository,
         chunker=TextChunker(
             chunk_size=CHUNK_SIZE,
@@ -191,13 +225,130 @@ def build_manager() -> RAGConversationManager:
     )
 
 
+def build_direct_chat_manager(
+    provider: str,
+    *,
+    conversation_file: Path | None = None,
+) -> RAGConversationManager:
+    normalized = normalize_llm_provider(provider)
+    chat_file = conversation_file or (
+        DIRECT_CHAT_DIR / f"{normalized}.json"
+    )
+    return build_manager(
+        provider=normalized,
+        conversation_file=chat_file,
+    )
+
+
+def build_super_ai_manager(
+    *,
+    conversation_file: Path = SUPER_AI_CHAT_FILE,
+) -> RAGConversationManager:
+    context_worker = create_provider_worker(
+        "context",
+        "Extract relevant facts, constraints, and missing evidence",
+        "gemini",
+    )
+    reasoning_worker = create_provider_worker(
+        "reasoner",
+        "Perform careful analysis using the available evidence",
+        "anthropic",
+    )
+    synthesis_worker = create_provider_worker(
+        "synthesizer",
+        "Produce one clear final answer for the user",
+        "openai",
+    )
+    workflow = SequentialHandoffCoordinator(
+        MultiAgentCoordinator([
+            context_worker,
+            reasoning_worker,
+            synthesis_worker,
+        ]),
+        [
+            HandoffStage(
+                "context",
+                "context",
+                "Extract facts, constraints, and uncertainties. "
+                "Do not invent missing evidence.",
+            ),
+            HandoffStage(
+                "reasoning",
+                "reasoner",
+                "Analyze the request and the extracted context. "
+                "Identify contradictions and a sound solution.",
+            ),
+            HandoffStage(
+                "final",
+                "synthesizer",
+                "Create the final answer from verified useful points. "
+                "Do not mention internal stages unless needed.",
+            ),
+        ],
+    )
+    return build_manager(
+        conversation_file=conversation_file,
+        client=SuperAIClient(workflow),
+    )
+
+
+def select_application_mode(
+    input_fn: Callable[[str], str] = input,
+) -> ApplicationMode:
+    choices = {
+        "1": ApplicationMode.DIRECT_CHAT,
+        "direct": ApplicationMode.DIRECT_CHAT,
+        "direct_chat": ApplicationMode.DIRECT_CHAT,
+        "2": ApplicationMode.SUPER_AI,
+        "super": ApplicationMode.SUPER_AI,
+        "super_ai": ApplicationMode.SUPER_AI,
+    }
+    print("Choose a section:")
+    print("  1. Direct Chat")
+    print("  2. Super AI")
+    while True:
+        selected = input_fn("Mode: ").strip().casefold()
+        mode = choices.get(selected)
+        if mode is not None:
+            return mode
+        print("Invalid mode. Choose 1 or 2.")
+
+
+def select_direct_provider(
+    input_fn: Callable[[str], str] = input,
+) -> str:
+    choices = {
+        "1": "anthropic",
+        "claude": "anthropic",
+        "anthropic": "anthropic",
+        "2": "openai",
+        "gpt": "openai",
+        "openai": "openai",
+        "3": "gemini",
+        "gemini": "gemini",
+    }
+    print("Choose an AI provider:")
+    print("  1. Claude (Anthropic)")
+    print("  2. GPT (OpenAI)")
+    print("  3. Gemini (Google)")
+    while True:
+        selected = input_fn("Provider: ").strip().casefold()
+        provider = choices.get(selected)
+        if provider is not None:
+            return provider
+        print("Invalid provider. Choose 1, 2, or 3.")
+
+
 def run_cli(
     manager: RAGConversationManager,
     input_fn: Callable[[str], str] = input,
     ingestor: DocumentIngestor | None = None,
+    *,
+    title: str = "AI RAG Chat",
+    stream_responses: bool = True,
 ) -> None:
     ingestor = ingestor or create_default_ingestor()
-    print("AI RAG Chat")
+    print(title)
     print_help()
 
     while True:
@@ -327,20 +478,24 @@ def run_cli(
                 )
                 continue
 
-            print(
-                "\nAssistant: ",
-                end="",
-                flush=True,
-            )
-
-            for chunk in manager.stream_message(prompt):
+            if stream_responses:
                 print(
-                    chunk,
+                    "\nAssistant: ",
                     end="",
                     flush=True,
                 )
 
-            print()
+                for chunk in manager.stream_message(prompt):
+                    print(
+                        chunk,
+                        end="",
+                        flush=True,
+                    )
+
+                print()
+            else:
+                response = manager.send_message(prompt)
+                print(f"\nAssistant: {response}")
             print_citations(manager.last_citations)
 
         except (EOFError, KeyboardInterrupt):
@@ -352,7 +507,20 @@ def run_cli(
 
 
 def main() -> None:
-    run_cli(build_manager())
+    mode = select_application_mode()
+    if mode is ApplicationMode.DIRECT_CHAT:
+        provider = select_direct_provider()
+        run_cli(
+            build_direct_chat_manager(provider),
+            title=f"Direct Chat ({provider})",
+        )
+        return
+
+    run_cli(
+        build_super_ai_manager(),
+        title="Super AI",
+        stream_responses=False,
+    )
 
 
 if __name__ == "__main__":

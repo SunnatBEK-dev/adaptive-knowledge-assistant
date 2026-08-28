@@ -1,0 +1,94 @@
+import pytest
+
+from ai_sdk.agents import (
+    AgentModelResponse,
+    AgentRunner,
+    AgentTextBlock,
+    AgentWorker,
+    HandoffStage,
+    MultiAgentCoordinator,
+    SequentialHandoffCoordinator,
+)
+from ai_sdk.application.conversation_manager import ConversationManager
+from ai_sdk.context.prompt_builder import PromptBuilder
+from ai_sdk.core.conversation import Conversation
+from ai_sdk.llm.base import BaseToolLLMClient
+from ai_sdk.llm.super_ai import SuperAIClient
+from ai_sdk.storage.json import JsonConversationRepository
+from ai_sdk.tools import ToolExecutor, ToolRegistry
+
+
+pytestmark = pytest.mark.integration
+
+
+class StageClient(BaseToolLLMClient):
+    def __init__(self, output):
+        self.output = output
+        self.prompts = []
+
+    def ask(self, messages):
+        return self.output
+
+    def stream(self, messages):
+        yield self.output
+
+    def complete_tool_turn(self, messages, schemas, events):
+        self.prompts.append(messages[0]["content"])
+        return AgentModelResponse([
+            AgentTextBlock(self.output),
+        ])
+
+
+def stage_worker(name, client, provider):
+    return AgentWorker(
+        name,
+        f"{name} responsibility",
+        AgentRunner(
+            client,
+            ToolExecutor(ToolRegistry()),
+        ),
+        provider=provider,
+    )
+
+
+def test_super_ai_combines_providers_and_persists_final_answer(
+    tmp_path,
+):
+    gemini = StageClient("Extracted facts")
+    claude = StageClient("Reasoned solution")
+    openai = StageClient("Final combined answer")
+    workers = [
+        stage_worker("context", gemini, "gemini"),
+        stage_worker("reasoner", claude, "anthropic"),
+        stage_worker("writer", openai, "openai"),
+    ]
+    workflow = SequentialHandoffCoordinator(
+        MultiAgentCoordinator(workers),
+        [
+            HandoffStage("context", "context", "Extract facts"),
+            HandoffStage("reason", "reasoner", "Analyze facts"),
+            HandoffStage("final", "writer", "Write answer"),
+        ],
+    )
+    repository = JsonConversationRepository(
+        tmp_path / "super_ai_chat.json"
+    )
+    conversation = Conversation()
+    manager = ConversationManager(
+        conversation=conversation,
+        prompt_builder=PromptBuilder(conversation),
+        client=SuperAIClient(workflow),
+        repository=repository,
+    )
+
+    answer = manager.send_message("Solve this problem")
+    restored = repository.load()
+
+    assert answer == "Final combined answer"
+    assert [message.content for message in restored.history()] == [
+        "Solve this problem",
+        "Final combined answer",
+    ]
+    assert "Extracted facts" in claude.prompts[0]
+    assert "Extracted facts" in openai.prompts[0]
+    assert "Reasoned solution" in openai.prompts[0]

@@ -7,7 +7,7 @@ and small abstractions over framework-specific magic.
 ## Current status
 
 The application architecture foundation is complete through evaluation phase
-9.2 and three provider integrations:
+9.2, three provider integrations, and the first two-mode application workflow:
 
 - conversation and message domain models;
 - JSON repository abstraction;
@@ -32,6 +32,10 @@ The application architecture foundation is complete through evaluation phase
 - named agent workers with explicit task assignment;
 - provider-bound worker construction for Anthropic, OpenAI, and Gemini;
 - deterministic multi-agent result collection and failure isolation;
+- explicit Direct Chat and Super AI application modes;
+- provider-isolated Direct Chat conversation histories;
+- bounded sequential handoffs between named provider workers;
+- a composite Super AI client that returns one final response;
 - stateless MCP `2026-07-28` request metadata;
 - provider-neutral MCP client and transport contracts;
 - explicit optional server discovery and capability checks;
@@ -127,17 +131,29 @@ retrieval metrics. It runs an application target once per explicit case,
 applies one or more deterministic evaluators, isolates case failures, and
 produces an aggregate quality report without retaining generated outputs.
 
+The CLI now exposes that foundation through two explicit product modes. Direct
+Chat sends a turn to one user-selected provider. Super AI runs a configured
+Gemini context stage, Claude reasoning stage, and OpenAI synthesis stage, with
+bounded text handoffs and one persisted final answer.
+
 ## Architecture
 
 ```text
-app/main.py
-    |
+app/main.py -> ApplicationMode
+    |-- Direct Chat -> RAGConversationManager -> selected provider client
+    `-- Super AI -> RAGConversationManager -> SuperAIClient
+                                            `-- SequentialHandoffCoordinator
+                                                |-- Gemini context worker
+                                                |-- Claude reasoning worker
+                                                `-- OpenAI synthesis worker
+
 RAGConversationManager
     |-- Conversation / Message
     |-- PromptBuilder -> SlidingContextWindow -> LLMMessage
     |                    |-- TokenCounter -> RegexTokenCounter
     |                    `-- ExtractiveConversationSummarizer
     |-- MultiAgentCoordinator -> AgentWorker(provider) -> isolated AgentRunner
+    |-- SequentialHandoffCoordinator -> ordered, bounded stage outputs
     |-- AgentRunner -> AgentState -> AgentEvent
     |                 |-- ToolRegistry -> ToolExecutor -> ToolResult
     |                 `-- BaseToolLLMClient -> provider adapter
@@ -254,7 +270,7 @@ and
 It reconstructs each tool turn locally, sends `store=False`, and does not rely
 on a provider-side conversation ID. This integration requires an OpenAI API
 key and does not reuse a consumer ChatGPT browser session. There is no
-automatic provider fallback or cross-provider routing yet.
+automatic provider fallback or load balancing.
 
 `GeminiClient` uses Google's
 [Interactions API](https://ai.google.dev/gemini-api/docs/text-generation) for
@@ -263,6 +279,31 @@ text and streaming, plus its
 Tool turns are reconstructed locally with every model-generated step preserved
 and `store=False`, so the adapter does not rely on a provider-side conversation
 ID.
+
+## Application modes
+
+The CLI asks for an application mode at startup:
+
+1. **Direct Chat** asks the user to select Claude, OpenAI, or Gemini. Each turn
+   goes only to that provider. Conversation history is isolated by provider in
+   `data/direct_chat/`, so switching providers does not mix chat histories.
+2. **Super AI** runs one explicit three-stage workflow: Gemini extracts context
+   and constraints, Claude performs the analysis, and OpenAI writes the final
+   answer. These are configurable workflow roles, not claims that one provider
+   is universally best at that role.
+
+Both modes use the same conversation, RAG, document, and long-term-memory
+features. Super AI stores its final conversation in `data/super_ai_chat.json`.
+Intermediate stage drafts are passed forward as bounded, untrusted data and
+are not added to the user-visible conversation history.
+
+Direct Chat needs only the selected provider's API key and normally makes one
+model request per ordinary chat turn. Super AI needs valid Gemini, Anthropic,
+and OpenAI configuration and makes at least three model requests per chat turn,
+so it costs more and usually takes longer. If one stage fails, later stages are
+not run and the incomplete user turn is rolled back. Super AI response
+streaming, automatic provider fallback, parallel execution, and dynamic model
+routing are not implemented yet.
 
 ## Run the CLI
 
@@ -317,8 +358,8 @@ When a `ToolExecutor` is configured on `ConversationManager` or
 `RAGConversationManager`, Claude, OpenAI, or Gemini may request one or more
 registered tools in a round. Results, including contained validation and
 execution errors, are sent back until the provider returns final text.
-`AgentRunner` defaults to at most eight tool rounds and rejects duplicate call IDs. Its
-returned `AgentState` contains
+`AgentRunner` defaults to at most eight tool rounds and rejects duplicate call
+IDs. Its returned `AgentState` contains
 ordered `AgentEvent` records and ends with either `final_response` or
 `max_tool_rounds`. Tool traces are transient when using the conversation
 manager; persisted history contains the original user message and final
@@ -355,6 +396,13 @@ an operating-system process boundary, so stateful clients and tool handlers
 remain the host application's responsibility. The coordinator does not perform
 automatic delegation, implicit handoffs, shared-state mutation, parallel
 execution, or recursive agent calls.
+
+`SequentialHandoffCoordinator` is an opt-in layer above that coordinator. The
+host declares an ordered list of stages and the responsible worker for each
+stage. A completed stage receives the original request plus bounded outputs
+from earlier stages; a failed stage stops the workflow. This makes the Super AI
+flow explicit and testable without giving agents permission to delegate or
+call one another recursively.
 
 `create_provider_worker()` binds one named worker to a configured provider and
 creates its isolated `AgentRunner`. Each provider reads its own API key and
@@ -602,8 +650,10 @@ RUN_GEMINI_INTEGRATION=1 \
 
 ## Next chapter
 
-The next optional multi-agent step is an explicit routing policy that maps a
-task to a worker without executing hidden delegation. Automatic fallback
-should only be added with clear retry and cost rules. Cost/latency summaries,
+The next core step is to replace free-form handoff text with a validated,
+structured payload and add dependency-aware workflow execution. After that, a
+deterministic capability router can choose an appropriate workflow or provider
+without hidden delegation. Automatic fallback should only be added with clear
+retry, quality, and cost rules. Super AI streaming, cost/latency summaries,
 regression gates, exporters, and persistent observability storage remain
 optional later work.

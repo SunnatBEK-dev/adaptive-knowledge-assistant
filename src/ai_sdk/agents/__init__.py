@@ -15,6 +15,12 @@ from ai_sdk.agents.model import (
     AgentStopReason,
     AgentTextBlock,
 )
+from ai_sdk.agents.handoff import (
+    HandoffResult,
+    HandoffStage,
+    HandoffStageResult,
+    SequentialHandoffCoordinator,
+)
 from ai_sdk.agents.plan import (
     AgentPlan,
     PlanStatus,
@@ -58,6 +64,9 @@ __all__ = [
     "BaseAgentReflector",
     "CoordinationError",
     "CoordinationResult",
+    "HandoffResult",
+    "HandoffStage",
+    "HandoffStageResult",
     "LLMAgentPlanner",
     "LLMAgentReflector",
     "MultiAgentCoordinator",
@@ -67,4 +76,5 @@ __all__ = [
     "PlanValidationError",
     "ReflectionValidationError",
     "ReflectionVerdict",
+    "SequentialHandoffCoordinator",
 ]

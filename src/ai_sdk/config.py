@@ -11,6 +11,8 @@ load_dotenv(PROJECT_ROOT / ".env")
 DATA_DIR = PROJECT_ROOT / "data"
 
 CHAT_FILE = DATA_DIR / "chat.json"
+DIRECT_CHAT_DIR = DATA_DIR / "direct_chat"
+SUPER_AI_CHAT_FILE = DATA_DIR / "super_ai_chat.json"
 EMBEDDINGS_FILE = DATA_DIR / "embeddings.json"
 VECTOR_STORE_FILE = DATA_DIR / "vectors.json"
 MEMORY_FILE = DATA_DIR / "memories.json"
