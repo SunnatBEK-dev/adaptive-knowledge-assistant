@@ -9,6 +9,7 @@ description = "A provider-neutral AI application SDK built from first principles
 requires-python = ">=3.10"
 dependencies = [
     "anthropic>=0.120,<1",
+    "google-genai>=2.20,<3",
     "openai>=3,<4",
     "python-dotenv>=1.2,<2",
 ]

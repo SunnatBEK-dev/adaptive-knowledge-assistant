@@ -1,6 +1,7 @@
 from ai_sdk.config import AI_PROVIDER
 from ai_sdk.llm.base import BaseToolLLMClient
 from ai_sdk.llm.claude import ClaudeClient
+from ai_sdk.llm.gemini import GeminiClient
 from ai_sdk.llm.openai import OpenAIClient
 
 
@@ -17,6 +18,8 @@ def create_llm_client(
         return ClaudeClient()
     if normalized == "openai":
         return OpenAIClient()
+    if normalized == "gemini":
+        return GeminiClient()
     raise RuntimeError(
         f"Unsupported AI_PROVIDER: {normalized}."
     )

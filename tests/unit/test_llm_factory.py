@@ -7,6 +7,7 @@ from ai_sdk.llm.factory import create_llm_client
 def test_factory_creates_selected_provider(monkeypatch):
     anthropic_client = object()
     openai_client = object()
+    gemini_client = object()
     monkeypatch.setattr(
         factory_module,
         "ClaudeClient",
@@ -17,9 +18,15 @@ def test_factory_creates_selected_provider(monkeypatch):
         "OpenAIClient",
         lambda: openai_client,
     )
+    monkeypatch.setattr(
+        factory_module,
+        "GeminiClient",
+        lambda: gemini_client,
+    )
 
     assert create_llm_client(" Anthropic ") is anthropic_client
     assert create_llm_client("OPENAI") is openai_client
+    assert create_llm_client("Gemini") is gemini_client
 
 
 def test_factory_uses_environment_provider(monkeypatch):
