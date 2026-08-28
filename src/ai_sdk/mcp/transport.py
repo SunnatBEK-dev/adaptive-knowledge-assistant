@@ -12,6 +12,15 @@ from ai_sdk.mcp.model import (
 )
 
 
+class MCPTransportResponseError(RuntimeError):
+    """A valid JSON-RPC error response returned by an MCP server."""
+
+    def __init__(self, code: int, message: str) -> None:
+        self.code = code
+        self.message = message
+        super().__init__(f"MCP server error {code}: {message}")
+
+
 class BaseMCPTransport(ABC):
     """Provider-neutral synchronous MCP transport boundary."""
 

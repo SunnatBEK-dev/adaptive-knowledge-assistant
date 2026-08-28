@@ -15,7 +15,10 @@ from ai_sdk.mcp.model import (
     MCPToolPage,
     MCPValidationError,
 )
-from ai_sdk.mcp.transport import BaseMCPTransport
+from ai_sdk.mcp.transport import (
+    BaseMCPTransport,
+    MCPTransportResponseError,
+)
 
 
 class MCPClientError(RuntimeError):
@@ -40,6 +43,15 @@ class MCPProtocolError(MCPClientError):
 
 class MCPCapabilityError(MCPClientError):
     """Raised when discovery says an operation is unsupported."""
+
+
+class MCPRemoteError(MCPClientError):
+    """A valid JSON-RPC error response from an MCP server."""
+
+    def __init__(self, code: int, message: str) -> None:
+        self.code = code
+        self.message = message
+        super().__init__(f"MCP server error {code}: {message}")
 
 
 ResultT = TypeVar("ResultT")
@@ -297,6 +309,11 @@ class MCPClient:
         self._require_open()
         try:
             return callback()
+        except MCPTransportResponseError as error:
+            raise MCPRemoteError(
+                error.code,
+                error.message,
+            ) from error
         except TimeoutError as error:
             self._abort()
             raise MCPTimeoutError(

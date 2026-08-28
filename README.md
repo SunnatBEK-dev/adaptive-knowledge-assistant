@@ -7,7 +7,7 @@ and small abstractions over framework-specific magic.
 ## Current status
 
 The application architecture foundation is complete through Agents and MCP
-phase 8.2:
+phase 8.3:
 
 - conversation and message domain models;
 - JSON repository abstraction;
@@ -40,6 +40,11 @@ phase 8.2:
 - generic MCP content plus structured tool-result preservation;
 - explicitly approved MCP tool registration into the local allow-list;
 - atomic rejection of MCP schemas the local validator cannot enforce;
+- dependency-free stateless MCP Streamable HTTP transport;
+- strict JSON-RPC response validation for JSON and request-scoped SSE;
+- fresh per-request MCP authorization injection;
+- safe MCP routing headers and approved `x-mcp-header` argument mirroring;
+- bounded HTTP responses, disabled redirects, and contained network errors;
 - Anthropic/Claude adapter behind an LLM contract;
 - provider-neutral embedding-client contract;
 - lazy SentenceTransformer embedding adapter;
@@ -85,7 +90,10 @@ provider-neutral agent runtime while Claude only translates one model turn at
 a time. The MCP foundation follows the stateless `2026-07-28` protocol: every
 protocol request carries its own version, client identity, and capabilities.
 Opening a transport does not perform a hidden handshake, and
-`server/discover` remains an explicit optional call.
+`server/discover` remains an explicit optional call. A concrete Streamable HTTP
+transport now maps each operation to a separate POST, accepts JSON or
+request-scoped SSE responses, validates JSON-RPC identifiers and result
+framing, and obtains authorization immediately before each request.
 
 ## Architecture
 
@@ -116,7 +124,7 @@ RAGConversationManager
     `-- ConversationRepository -> JsonConversationRepository
 
 MCPClient -> MCPRequestContext
-    `-- BaseMCPTransport
+    `-- BaseMCPTransport -> StreamableHTTPTransport -> HTTP MCP endpoint
         |-- optional MCPDiscoveryResult
         |-- ordered MCPToolPage
         |-- ordered MCPResourcePage
@@ -272,6 +280,35 @@ request another page or cache a result. `tools/call` preserves text, non-text,
 structured, and remote error results. `resources/read` preserves multiple text
 or binary content items plus cache hints.
 
+`StreamableHTTPTransport` is the dependency-free concrete network adapter. It
+sends every operation as a new POST with matching protocol metadata and
+`MCP-Protocol-Version`, `Mcp-Method`, and, where required, `Mcp-Name` headers.
+It supports ordinary JSON responses and request-scoped SSE, enforces matching
+JSON-RPC IDs, bounds response size, rejects redirects, and converts valid
+remote JSON-RPC errors into typed `MCPRemoteError` values. An optional
+authorization callback is invoked separately for every request so the host can
+provide a current token without storing it in the transport.
+
+Tools may mark compatible primitive input properties with `x-mcp-header`.
+Those values are mirrored as `Mcp-Param-*` headers when the tool is called;
+non-ASCII values use the protocol's base64 sentinel form. Tools with invalid
+or unreachable header annotations are excluded before approval and
+registration.
+
+```python
+transport = StreamableHTTPTransport(
+    "https://example.com/mcp",
+    authorization_provider=lambda: get_current_authorization(),
+)
+client = MCPClient(
+    transport,
+    client_info=MCPImplementation("my-client", "1.0"),
+)
+
+with client:
+    tools = client.list_tools()
+```
+
 `MCPToolAdapter` never discovers or registers tools automatically. The host
 must pass exact approved names. Only schemas that fit the local tool layer's
 string, integer, number, and boolean parameter subset are accepted; unsupported
@@ -280,10 +317,10 @@ registry collisions are rejected before any registry change. Approved remote
 errors remain explicit tool errors, while transport exceptions still expose
 only their exception type.
 
-This phase deliberately has no concrete network or subprocess transport,
-credential handling, automatic pagination/discovery, schema aliases, or MCP
-multi round-trip input requests. The transport abstraction keeps those
-additions separate from protocol and allow-list policy.
+This phase deliberately has no automatic OAuth discovery or token refresh,
+automatic pagination/discovery, legacy MCP protocol fallback, subscriptions,
+or MCP multi round-trip input requests. The authorization callback lets the
+host own credential refresh without exposing secrets to the SDK.
 
 The default ingestion layer supports UTF-8 `.txt`, `.md`, `.markdown`, and
 `.rst` files. Directory synchronization scans recursively in deterministic
@@ -330,6 +367,7 @@ RUN_ANTHROPIC_INTEGRATION=1 \
 
 ## Next chapter
 
-MCP phase 8.3 will add a concrete stateless Streamable HTTP transport and
-strict JSON-RPC response mapping. Authorization will be injected per request,
-and real network tests will remain opt-in so the default suite stays offline.
+MCP phase 8.4 will add bounded multi round-trip input-request handling while
+keeping every continuation and user interaction under explicit host control.
+Subscriptions, legacy fallback, and automatic OAuth flows remain optional
+future integrations rather than requirements for the core SDK.

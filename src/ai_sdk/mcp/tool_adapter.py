@@ -29,7 +29,12 @@ class MCPToolAdapter:
         "required",
         "additionalProperties",
     }
-    _PARAMETER_SCHEMA_KEYS = {"type", "title", "description"}
+    _PARAMETER_SCHEMA_KEYS = {
+        "type",
+        "title",
+        "description",
+        "x-mcp-header",
+    }
     _PARAMETER_TYPES = {
         "string": ToolParameterType.STRING,
         "integer": ToolParameterType.INTEGER,
