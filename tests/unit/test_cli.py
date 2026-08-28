@@ -19,10 +19,14 @@ from ai_sdk.agents import (
     AgentWorker,
     DependencyHandoffCoordinator,
     HandoffOutputFormat,
+    SuperAIRoute,
 )
 from ai_sdk.application import ApplicationMode
 from ai_sdk.llm.base import BaseToolLLMClient
-from ai_sdk.llm.super_ai import SuperAIClient
+from ai_sdk.llm.super_ai import (
+    RoutedSuperAIClient,
+    SuperAIClient,
+)
 from ai_sdk.tools import ToolExecutor, ToolRegistry
 
 
@@ -219,14 +223,27 @@ def test_super_ai_builder_configures_three_provider_stages(
     assert result is expected
     assert providers == ["gemini", "anthropic", "openai"]
     assert received["conversation_file"] == chat_file
-    assert isinstance(received["client"], SuperAIClient)
+    routed = received["client"]
+    assert isinstance(routed, RoutedSuperAIClient)
+    assert set(routed.workflows) == set(SuperAIRoute)
+    assert {
+        route: len(client.workflow.stages)
+        for route, client in routed.workflows.items()
+    } == {
+        SuperAIRoute.FAST: 1,
+        SuperAIRoute.CONTEXT: 2,
+        SuperAIRoute.REASONING: 2,
+        SuperAIRoute.FULL: 3,
+    }
+    full = routed.workflows[SuperAIRoute.FULL]
+    assert isinstance(full, SuperAIClient)
     assert isinstance(
-        received["client"].workflow,
+        full.workflow,
         DependencyHandoffCoordinator,
     )
     assert [
         stage.output_format
-        for stage in received["client"].workflow.stages
+        for stage in full.workflow.stages
     ] == [
         HandoffOutputFormat.STRUCTURED,
         HandoffOutputFormat.STRUCTURED,
@@ -234,7 +251,7 @@ def test_super_ai_builder_configures_three_provider_stages(
     ]
     assert [
         stage.depends_on
-        for stage in received["client"].workflow.stages
+        for stage in full.workflow.stages
     ] == [
         (),
         ("context",),

@@ -7,10 +7,12 @@ from ai_sdk.application.rag_manager import (
 from ai_sdk.application.rag_response import Citation
 from ai_sdk.application.modes import ApplicationMode
 from ai_sdk.agents import (
+    CapabilityRouter,
     DependencyHandoffCoordinator,
     HandoffOutputFormat,
     HandoffStage,
     MultiAgentCoordinator,
+    SuperAIRoute,
     create_provider_worker,
 )
 from ai_sdk.config import (
@@ -47,7 +49,10 @@ from ai_sdk.llm.factory import (
     normalize_llm_provider,
 )
 from ai_sdk.llm.base import BaseLLMClient
-from ai_sdk.llm.super_ai import SuperAIClient
+from ai_sdk.llm.super_ai import (
+    RoutedSuperAIClient,
+    SuperAIClient,
+)
 from ai_sdk.memory.json_store import JsonMemoryStore
 from ai_sdk.retrieval.chunker import TextChunker
 from ai_sdk.retrieval.document import Document
@@ -260,41 +265,75 @@ def build_super_ai_manager(
         "Produce one clear final answer for the user",
         "openai",
     )
-    workflow = DependencyHandoffCoordinator(
-        MultiAgentCoordinator([
-            context_worker,
-            reasoning_worker,
-            synthesis_worker,
-        ]),
-        [
-            HandoffStage(
-                "context",
-                "context",
-                "Extract facts, constraints, and uncertainties. "
-                "Do not invent missing evidence.",
-                output_format=HandoffOutputFormat.STRUCTURED,
-            ),
-            HandoffStage(
-                "reasoning",
-                "reasoner",
-                "Analyze the request and the extracted context. "
-                "Identify contradictions and a sound solution. "
-                "Carry forward every useful verified fact.",
-                output_format=HandoffOutputFormat.STRUCTURED,
-                depends_on=("context",),
-            ),
-            HandoffStage(
-                "final",
-                "synthesizer",
-                "Create the final answer from verified useful points. "
-                "Do not mention internal stages unless needed.",
-                depends_on=("context", "reasoning"),
-            ),
-        ],
+    coordinator = MultiAgentCoordinator([
+        context_worker,
+        reasoning_worker,
+        synthesis_worker,
+    ])
+
+    def context_stage() -> HandoffStage:
+        return HandoffStage(
+            "context",
+            "context",
+            "Extract facts, constraints, and uncertainties. "
+            "Do not invent missing evidence.",
+            output_format=HandoffOutputFormat.STRUCTURED,
+        )
+
+    def reasoning_stage(
+        *dependencies: str,
+    ) -> HandoffStage:
+        return HandoffStage(
+            "reasoning",
+            "reasoner",
+            "Analyze the request and available evidence. "
+            "Identify contradictions and a sound solution. "
+            "Carry forward every useful verified fact.",
+            output_format=HandoffOutputFormat.STRUCTURED,
+            depends_on=dependencies,
+        )
+
+    def final_stage(*dependencies: str) -> HandoffStage:
+        return HandoffStage(
+            "final",
+            "synthesizer",
+            "Create the final answer from verified useful points. "
+            "Do not mention internal stages unless needed.",
+            depends_on=dependencies,
+        )
+
+    def workflow(
+        stages: list[HandoffStage],
+    ) -> SuperAIClient:
+        return SuperAIClient(DependencyHandoffCoordinator(
+            coordinator,
+            stages,
+        ))
+
+    routed_client = RoutedSuperAIClient(
+        CapabilityRouter(),
+        {
+            SuperAIRoute.FAST: workflow([
+                final_stage(),
+            ]),
+            SuperAIRoute.CONTEXT: workflow([
+                context_stage(),
+                final_stage("context"),
+            ]),
+            SuperAIRoute.REASONING: workflow([
+                reasoning_stage(),
+                final_stage("reasoning"),
+            ]),
+            SuperAIRoute.FULL: workflow([
+                context_stage(),
+                reasoning_stage("context"),
+                final_stage("context", "reasoning"),
+            ]),
+        },
     )
     return build_manager(
         conversation_file=conversation_file,
-        client=SuperAIClient(workflow),
+        client=routed_client,
     )
 
 

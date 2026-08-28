@@ -7,16 +7,22 @@ from ai_sdk.agents import (
     AgentRunner,
     AgentTextBlock,
     AgentWorker,
+    CapabilityRouter,
     DependencyHandoffCoordinator,
     HandoffOutputFormat,
     HandoffStage,
     MultiAgentCoordinator,
+    SequentialHandoffCoordinator,
+    SuperAIRoute,
 )
 from ai_sdk.application.conversation_manager import ConversationManager
 from ai_sdk.context.prompt_builder import PromptBuilder
 from ai_sdk.core.conversation import Conversation
 from ai_sdk.llm.base import BaseToolLLMClient
-from ai_sdk.llm.super_ai import SuperAIClient
+from ai_sdk.llm.super_ai import (
+    RoutedSuperAIClient,
+    SuperAIClient,
+)
 from ai_sdk.storage.json import JsonConversationRepository
 from ai_sdk.tools import ToolExecutor, ToolRegistry
 
@@ -128,3 +134,64 @@ def test_super_ai_combines_providers_and_persists_final_answer(
     assert "Reasoned solution" in openai.prompts[0]
     assert "Use the solution" in openai.prompts[0]
     assert "Required dependency handoffs" in openai.prompts[0]
+
+
+def test_routed_super_ai_selects_workflow_and_persists_turns(
+    tmp_path,
+):
+    providers = {
+        route: StageClient(route.value)
+        for route in SuperAIRoute
+    }
+    workflows = {}
+    for route, provider in providers.items():
+        route_worker = stage_worker(
+            f"{route.value}_worker",
+            provider,
+            "openai",
+        )
+        workflows[route] = SuperAIClient(
+            SequentialHandoffCoordinator(
+                MultiAgentCoordinator([route_worker]),
+                [HandoffStage(
+                    "final",
+                    route_worker.name,
+                    "Answer",
+                )],
+            )
+        )
+    client = RoutedSuperAIClient(
+        CapabilityRouter(),
+        workflows,
+    )
+    repository = JsonConversationRepository(
+        tmp_path / "routed_super_ai_chat.json"
+    )
+    conversation = Conversation()
+    manager = ConversationManager(
+        conversation=conversation,
+        prompt_builder=PromptBuilder(conversation),
+        client=client,
+        repository=repository,
+    )
+
+    fast_answer = manager.send_message("Salom")
+    reasoning_answer = manager.send_message(
+        "Nega bu yechim ishlaydi?"
+    )
+
+    assert fast_answer == "fast"
+    assert reasoning_answer == "reasoning"
+    assert len(providers[SuperAIRoute.FAST].prompts) == 1
+    assert len(providers[SuperAIRoute.REASONING].prompts) == 1
+    assert providers[SuperAIRoute.CONTEXT].prompts == []
+    assert providers[SuperAIRoute.FULL].prompts == []
+    assert [
+        message.content
+        for message in repository.load().history()
+    ] == [
+        "Salom",
+        "fast",
+        "Nega bu yechim ishlaydi?",
+        "reasoning",
+    ]

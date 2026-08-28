@@ -42,6 +42,13 @@ from ai_sdk.agents.reflection import (
     ReflectionValidationError,
     ReflectionVerdict,
 )
+from ai_sdk.agents.routing import (
+    AICapability,
+    CapabilityRouter,
+    RoutingDecision,
+    RoutingSignal,
+    SuperAIRoute,
+)
 from ai_sdk.agents.runner import (
     AgentEventHandler,
     AgentRunner,
@@ -50,6 +57,7 @@ from ai_sdk.agents.state import AgentState
 
 
 __all__ = [
+    "AICapability",
     "AgentTask",
     "AgentTaskResult",
     "AgentTaskStatus",
@@ -66,6 +74,7 @@ __all__ = [
     "AgentTextBlock",
     "BaseAgentPlanner",
     "BaseAgentReflector",
+    "CapabilityRouter",
     "CoordinationError",
     "CoordinationResult",
     "DependencyHandoffCoordinator",
@@ -84,5 +93,8 @@ __all__ = [
     "PlanValidationError",
     "ReflectionValidationError",
     "ReflectionVerdict",
+    "RoutingDecision",
+    "RoutingSignal",
     "SequentialHandoffCoordinator",
+    "SuperAIRoute",
 ]

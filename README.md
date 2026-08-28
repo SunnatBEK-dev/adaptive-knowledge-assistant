@@ -37,6 +37,8 @@ The application architecture foundation is complete through evaluation phase
 - validated, bounded structured handoffs between named provider workers;
 - deterministic dependency-graph validation and topological execution;
 - failed-branch pruning with independent-stage continuation;
+- explainable deterministic capability routing without a model call;
+- one-, two-, and three-provider Super AI workflow variants;
 - a composite Super AI client that returns one final response;
 - stateless MCP `2026-07-28` request metadata;
 - provider-neutral MCP client and transport contracts;
@@ -134,20 +136,21 @@ applies one or more deterministic evaluators, isolates case failures, and
 produces an aggregate quality report without retaining generated outputs.
 
 The CLI now exposes that foundation through two explicit product modes. Direct
-Chat sends a turn to one user-selected provider. Super AI runs a configured
-Gemini context stage, Claude reasoning stage, and OpenAI synthesis stage, with
-validated JSON handoffs and one persisted final answer.
+Chat sends a turn to one user-selected provider. Super AI deterministically
+selects a one-, two-, or three-provider workflow from the request, uses
+validated JSON handoffs where needed, and persists one final answer.
 
 ## Architecture
 
 ```text
 app/main.py -> ApplicationMode
     |-- Direct Chat -> RAGConversationManager -> selected provider client
-    `-- Super AI -> RAGConversationManager -> SuperAIClient
-                                            `-- DependencyHandoffCoordinator
-                                                |-- Gemini context worker
-                                                |-- Claude reasoning worker
-                                                `-- OpenAI synthesis worker
+    `-- Super AI -> RAGConversationManager -> RoutedSuperAIClient
+                                            `-- CapabilityRouter
+                                                |-- FAST -> OpenAI synthesis
+                                                |-- CONTEXT -> Gemini -> OpenAI
+                                                |-- REASONING -> Claude -> OpenAI
+                                                `-- FULL -> Gemini -> Claude -> OpenAI
 
 RAGConversationManager
     |-- Conversation / Message
@@ -290,27 +293,34 @@ The CLI asks for an application mode at startup:
 1. **Direct Chat** asks the user to select Claude, OpenAI, or Gemini. Each turn
    goes only to that provider. Conversation history is isolated by provider in
    `data/direct_chat/`, so switching providers does not mix chat histories.
-2. **Super AI** runs one explicit three-stage workflow: Gemini extracts context
-   and constraints, Claude performs the analysis, and OpenAI writes the final
-   answer. These are configurable workflow roles, not claims that one provider
-   is universally best at that role.
+2. **Super AI** selects one of four explicit routes. FAST uses OpenAI synthesis;
+   CONTEXT uses Gemini then OpenAI; REASONING uses Claude then OpenAI; FULL uses
+   Gemini context, Claude reasoning, and OpenAI synthesis. These are configurable
+   workflow roles, not claims that one provider is universally best at a role.
 
 Both modes use the same conversation, RAG, document, and long-term-memory
 features. Super AI stores its final conversation in `data/super_ai_chat.json`.
 The context and reasoning stages must return exactly four validated fields:
 `summary`, `facts`, `uncertainties`, and `recommendations`. Each stage receives
 only its explicitly declared, bounded dependency payloads as untrusted JSON
-data. The final stage depends on both context and reasoning, then returns
-ordinary user-facing text. Intermediate payloads are not added to the
+data. The FULL route's final stage depends on both context and reasoning, then
+returns ordinary user-facing text. Intermediate payloads are not added to the
 user-visible conversation history.
 
 Direct Chat needs only the selected provider's API key and normally makes one
 model request per ordinary chat turn. Super AI needs valid Gemini, Anthropic,
-and OpenAI configuration and makes at least three model requests per chat turn,
-so it costs more and usually takes longer. If one stage fails, later stages are
-not run and the incomplete user turn is rolled back. Super AI response
-streaming, automatic provider fallback, parallel execution, and dynamic model
-routing are not implemented yet.
+and OpenAI configuration at startup. Depending on the selected route, it makes
+one, two, or three model requests per chat turn. If one stage fails, dependent
+stages are not run and the incomplete user turn is rolled back. Super AI
+response streaming, automatic provider fallback, and parallel execution are
+not implemented yet.
+
+`CapabilityRouter` is local and deterministic; it does not make a routing model
+request. Short ordinary prompts select FAST. Source, evidence, document, or RAG
+context signals select CONTEXT. Analysis, comparison, planning, or multi-part
+signals select REASONING. Requests containing both capability groups, or long
+requests, select FULL. The decision exposes its route, required capabilities,
+and matched signals for tests and future observability.
 
 ## Run the CLI
 
@@ -422,6 +432,12 @@ failed stage blocks only its dependent descendants, while unrelated ready
 stages may continue. Dependency payloads are combined into bounded untrusted
 JSON; an oversized dependency input fails before the target worker runs. Ready
 stages are still executed sequentially in this phase, not in parallel.
+
+`CapabilityRouter` chooses between predeclared FAST, CONTEXT, REASONING, and
+FULL dependency workflows. Its bounded English and Uzbek signal rules are
+explicit and offline-testable. It cannot invent a provider, silently delegate,
+or make an extra LLM request. `RoutedSuperAIClient` requires all four routes to
+be configured and exposes the latest decision and workflow result.
 
 `create_provider_worker()` binds one named worker to a configured provider and
 creates its isolated `AgentRunner`. Each provider reads its own API key and
@@ -669,8 +685,8 @@ RUN_GEMINI_INTEGRATION=1 \
 
 ## Next chapter
 
-The next core step is a deterministic capability router that chooses an
-appropriate workflow or provider without hidden delegation. Automatic fallback
-should only be added with clear retry, quality, and cost rules. Parallel ready
-stages, Super AI streaming, cost/latency summaries, regression gates,
+The next core step is a route-evaluation suite that measures selection quality,
+request count, and latency before changing routing thresholds. Automatic
+fallback should only be added with clear retry, quality, and cost rules.
+Parallel ready stages, Super AI streaming, a selective verification stage,
 exporters, and persistent observability storage remain optional later work.
