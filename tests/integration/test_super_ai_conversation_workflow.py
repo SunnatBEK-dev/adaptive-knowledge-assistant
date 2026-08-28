@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from ai_sdk.agents import (
@@ -5,6 +7,7 @@ from ai_sdk.agents import (
     AgentRunner,
     AgentTextBlock,
     AgentWorker,
+    HandoffOutputFormat,
     HandoffStage,
     MultiAgentCoordinator,
     SequentialHandoffCoordinator,
@@ -51,11 +54,27 @@ def stage_worker(name, client, provider):
     )
 
 
+def payload(summary, *, facts=(), recommendations=()):
+    return json.dumps({
+        "summary": summary,
+        "facts": list(facts),
+        "uncertainties": [],
+        "recommendations": list(recommendations),
+    })
+
+
 def test_super_ai_combines_providers_and_persists_final_answer(
     tmp_path,
 ):
-    gemini = StageClient("Extracted facts")
-    claude = StageClient("Reasoned solution")
+    gemini = StageClient(payload(
+        "Extracted context",
+        facts=["Extracted facts"],
+    ))
+    claude = StageClient(payload(
+        "Reasoned solution",
+        facts=["Extracted facts"],
+        recommendations=["Use the solution"],
+    ))
     openai = StageClient("Final combined answer")
     workers = [
         stage_worker("context", gemini, "gemini"),
@@ -65,8 +84,18 @@ def test_super_ai_combines_providers_and_persists_final_answer(
     workflow = SequentialHandoffCoordinator(
         MultiAgentCoordinator(workers),
         [
-            HandoffStage("context", "context", "Extract facts"),
-            HandoffStage("reason", "reasoner", "Analyze facts"),
+            HandoffStage(
+                "context",
+                "context",
+                "Extract facts",
+                output_format=HandoffOutputFormat.STRUCTURED,
+            ),
+            HandoffStage(
+                "reason",
+                "reasoner",
+                "Analyze facts",
+                output_format=HandoffOutputFormat.STRUCTURED,
+            ),
             HandoffStage("final", "writer", "Write answer"),
         ],
     )
@@ -90,5 +119,6 @@ def test_super_ai_combines_providers_and_persists_final_answer(
         "Final combined answer",
     ]
     assert "Extracted facts" in claude.prompts[0]
-    assert "Extracted facts" in openai.prompts[0]
     assert "Reasoned solution" in openai.prompts[0]
+    assert "Use the solution" in openai.prompts[0]
+    assert "Previous structured handoff" in openai.prompts[0]

@@ -7,6 +7,7 @@ from ai_sdk.application.rag_manager import (
 from ai_sdk.application.rag_response import Citation
 from ai_sdk.application.modes import ApplicationMode
 from ai_sdk.agents import (
+    HandoffOutputFormat,
     HandoffStage,
     MultiAgentCoordinator,
     SequentialHandoffCoordinator,
@@ -271,12 +272,15 @@ def build_super_ai_manager(
                 "context",
                 "Extract facts, constraints, and uncertainties. "
                 "Do not invent missing evidence.",
+                output_format=HandoffOutputFormat.STRUCTURED,
             ),
             HandoffStage(
                 "reasoning",
                 "reasoner",
                 "Analyze the request and the extracted context. "
-                "Identify contradictions and a sound solution.",
+                "Identify contradictions and a sound solution. "
+                "Carry forward every useful verified fact.",
+                output_format=HandoffOutputFormat.STRUCTURED,
             ),
             HandoffStage(
                 "final",

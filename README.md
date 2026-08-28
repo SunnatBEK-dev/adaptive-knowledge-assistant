@@ -34,7 +34,7 @@ The application architecture foundation is complete through evaluation phase
 - deterministic multi-agent result collection and failure isolation;
 - explicit Direct Chat and Super AI application modes;
 - provider-isolated Direct Chat conversation histories;
-- bounded sequential handoffs between named provider workers;
+- validated, bounded structured handoffs between named provider workers;
 - a composite Super AI client that returns one final response;
 - stateless MCP `2026-07-28` request metadata;
 - provider-neutral MCP client and transport contracts;
@@ -134,7 +134,7 @@ produces an aggregate quality report without retaining generated outputs.
 The CLI now exposes that foundation through two explicit product modes. Direct
 Chat sends a turn to one user-selected provider. Super AI runs a configured
 Gemini context stage, Claude reasoning stage, and OpenAI synthesis stage, with
-bounded text handoffs and one persisted final answer.
+validated JSON handoffs and one persisted final answer.
 
 ## Architecture
 
@@ -294,8 +294,11 @@ The CLI asks for an application mode at startup:
 
 Both modes use the same conversation, RAG, document, and long-term-memory
 features. Super AI stores its final conversation in `data/super_ai_chat.json`.
-Intermediate stage drafts are passed forward as bounded, untrusted data and
-are not added to the user-visible conversation history.
+The context and reasoning stages must return exactly four validated fields:
+`summary`, `facts`, `uncertainties`, and `recommendations`. Only the latest
+bounded payload is passed to the next stage as untrusted JSON data. The final
+stage returns ordinary user-facing text. Intermediate payloads are not added
+to the user-visible conversation history.
 
 Direct Chat needs only the selected provider's API key and normally makes one
 model request per ordinary chat turn. Super AI needs valid Gemini, Anthropic,
@@ -399,8 +402,11 @@ execution, or recursive agent calls.
 
 `SequentialHandoffCoordinator` is an opt-in layer above that coordinator. The
 host declares an ordered list of stages and the responsible worker for each
-stage. A completed stage receives the original request plus bounded outputs
-from earlier stages; a failed stage stops the workflow. This makes the Super AI
+stage. A stage may return ordinary text or a strict `HandoffPayload`. Structured
+payloads have bounded summaries and arrays of facts, uncertainties, and
+recommendations; unknown fields, malformed JSON, invalid values, and oversized
+outputs fail the stage before another provider runs. The next stage receives
+the latest validated payload plus the original request. This makes the Super AI
 flow explicit and testable without giving agents permission to delegate or
 call one another recursively.
 
@@ -650,8 +656,7 @@ RUN_GEMINI_INTEGRATION=1 \
 
 ## Next chapter
 
-The next core step is to replace free-form handoff text with a validated,
-structured payload and add dependency-aware workflow execution. After that, a
+The next core step is dependency-aware workflow execution. After that, a
 deterministic capability router can choose an appropriate workflow or provider
 without hidden delegation. Automatic fallback should only be added with clear
 retry, quality, and cost rules. Super AI streaming, cost/latency summaries,
