@@ -6,7 +6,8 @@ and small abstractions over framework-specific magic.
 
 ## Current status
 
-The application architecture foundation is complete through Agents phase 6.4:
+The application architecture foundation is complete through Agents and MCP
+phase 8.1:
 
 - conversation and message domain models;
 - JSON repository abstraction;
@@ -29,6 +30,12 @@ The application architecture foundation is complete through Agents phase 6.4:
 - structured reflection verdicts, strengths, and improvements;
 - named agent workers with explicit task assignment;
 - deterministic multi-agent result collection and failure isolation;
+- stateless MCP `2026-07-28` request metadata;
+- provider-neutral MCP client and transport contracts;
+- explicit optional server discovery and capability checks;
+- ordered, cursor-based MCP tool and resource catalogs;
+- MCP cache-hint preservation for list and discovery results;
+- explicit MCP transport lifecycle, timeouts, and failure isolation;
 - Anthropic/Claude adapter behind an LLM contract;
 - provider-neutral embedding-client contract;
 - lazy SentenceTransformer embedding adapter;
@@ -71,7 +78,10 @@ that sends registered schemas to Claude, validates every requested call,
 dispatches only explicitly registered Python handlers, and returns structured
 results until Claude produces a final answer. The loop policy now lives in a
 provider-neutral agent runtime while Claude only translates one model turn at
-a time.
+a time. The MCP foundation follows the stateless `2026-07-28` protocol: every
+protocol request carries its own version, client identity, and capabilities.
+Opening a transport does not perform a hidden handshake, and
+`server/discover` remains an explicit optional call.
 
 ## Architecture
 
@@ -100,6 +110,12 @@ RAGConversationManager
     |                            `-- BaseDocumentLoader -> TextDocumentLoader
     |-- BaseMemoryStore -> JsonMemoryStore -> BM25 recall
     `-- ConversationRepository -> JsonConversationRepository
+
+MCPClient -> MCPRequestContext
+    `-- BaseMCPTransport
+        |-- optional MCPDiscoveryResult
+        |-- ordered MCPToolPage
+        `-- ordered MCPResourcePage
 ```
 
 The domain layer does not know about JSON, filesystem paths, Anthropic, API
@@ -235,6 +251,21 @@ remain the host application's responsibility. The coordinator does not perform
 automatic delegation, implicit handoffs, shared-state mutation, parallel
 execution, or recursive agent calls.
 
+`MCPClient` provides the local contract for MCP `2026-07-28`. It has an
+explicit `new -> opening -> open -> failed/closed` transport lifecycle, sends
+protocol version, client identity, and client capabilities with every protocol
+request, and contains transport exception messages. `server/discover` is
+optional and never runs automatically. If the host calls it, the client checks
+the requested protocol version and advertised tool/resource capabilities.
+`tools/list` and `resources/list` return exactly one ordered page at a time,
+including the next cursor and server cache hints; the host decides whether to
+request another page or cache a result.
+
+This phase deliberately has no concrete network or subprocess transport,
+credential handling, remote tool execution, resource reading, automatic
+pagination, or automatic discovery. The transport abstraction makes those
+additions testable without coupling the domain layer to one MCP library.
+
 The default ingestion layer supports UTF-8 `.txt`, `.md`, `.markdown`, and
 `.rst` files. Directory synchronization scans recursively in deterministic
 path order, skips unsupported formats, and persists content hashes plus the
@@ -280,7 +311,7 @@ RUN_ANTHROPIC_INTEGRATION=1 \
 
 ## Next chapter
 
-The next major chapter is MCP / External Systems. It will begin with
-provider-neutral MCP server, resource, and tool contracts plus explicit
-connection lifecycle and timeout behavior. Remote execution, credentials, and
-automatic discovery will not be added until the local contract is tested.
+MCP phase 8.2 will add explicit remote tool-call and resource-read contracts,
+then adapt approved MCP tools into the SDK's existing allow-listed tool layer.
+A concrete transport and credentials remain separate follow-up work so network
+and security policy do not leak into the protocol domain models.
