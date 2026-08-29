@@ -7,6 +7,7 @@ from app.main import (
     build_manager,
     build_super_ai_manager,
     load_document,
+    print_super_ai_stats,
     run_cli,
     select_application_mode,
     select_direct_provider,
@@ -129,6 +130,14 @@ def test_cli_can_run_non_streaming_super_ai_mode(capsys):
     assert "Super AI" in output
     assert "Assistant: Combined answer" in output
     assert manager.prompts == ["Question"]
+
+
+def test_cli_explains_stats_availability(capsys):
+    manager = NonStreamingManager()
+
+    print_super_ai_stats(manager)
+
+    assert "available in Super AI mode" in capsys.readouterr().out
 
 
 def test_manager_builder_rejects_provider_and_explicit_client():

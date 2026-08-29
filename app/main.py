@@ -147,10 +147,53 @@ def print_help() -> None:
         "  /memories           Show long-term memories\n"
         "  /forget <memory>    Remove a long-term memory\n"
         "  /history            Show conversation history\n"
+        "  /stats              Show Super AI runtime statistics\n"
         "  /save               Save conversation history\n"
         "  /clear              Clear conversation history\n"
         "  /help               Show commands\n"
         "  /exit               Exit\n"
+    )
+
+
+def print_super_ai_stats(
+    manager: RAGConversationManager,
+) -> None:
+    client = getattr(manager, "client", None)
+    if not isinstance(client, RoutedSuperAIClient):
+        print("\nRuntime statistics are available in Super AI mode.\n")
+        return
+
+    report = client.stats.report()
+    if report.total_runs == 0:
+        print("\nNo Super AI runs have been recorded yet.\n")
+        return
+
+    routes = ", ".join(
+        f"{route}={count}"
+        for route, count in sorted(report.route_counts.items())
+    )
+    stages = ", ".join(
+        f"{stage}={count}"
+        for stage, count in sorted(
+            report.stage_execution_counts.items()
+        )
+    )
+    print("\nSuper AI runtime statistics:")
+    print(
+        f"- Runs: {report.total_runs} "
+        f"(successful={report.successful_runs}, "
+        f"failed={report.failed_runs})"
+    )
+    print(f"- Routes: {routes or 'none'}")
+    print(
+        f"- Stages: executed={report.executed_stage_count}, "
+        f"failed={report.failed_stage_count}, "
+        f"blocked={report.blocked_stage_count}"
+    )
+    print(f"- Stage executions: {stages or 'none'}")
+    print(
+        f"- Mean duration: {report.mean_duration_ms:.1f} ms "
+        f"(max={report.max_duration_ms:.1f} ms)\n"
     )
 
 
@@ -431,6 +474,10 @@ def run_cli(
 
             if command == "/history":
                 print_history(manager.conversation)
+                continue
+
+            if command == "/stats":
+                print_super_ai_stats(manager)
                 continue
 
             if command == "/remember":

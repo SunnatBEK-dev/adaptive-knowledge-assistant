@@ -1,4 +1,6 @@
-from collections.abc import Iterator, Mapping
+import re
+from collections.abc import Callable, Iterator, Mapping
+from time import perf_counter_ns
 
 from ai_sdk.agents.handoff import (
     DependencyHandoffCoordinator,
@@ -11,7 +13,14 @@ from ai_sdk.agents.routing import (
     SuperAIRoute,
 )
 from ai_sdk.llm.base import BaseLLMClient
+from ai_sdk.llm.super_ai_stats import (
+    InMemorySuperAIStats,
+    SuperAIRunMetric,
+)
 from ai_sdk.llm.types import LLMMessage
+
+
+_ERROR_TYPE_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]{0,127}$")
 
 
 class SuperAIClient(BaseLLMClient):
@@ -95,6 +104,9 @@ class RoutedSuperAIClient(BaseLLMClient):
         self,
         router: CapabilityRouter,
         workflows: Mapping[SuperAIRoute, SuperAIClient],
+        *,
+        stats: InMemorySuperAIStats | None = None,
+        clock_ns: Callable[[], int] = perf_counter_ns,
     ) -> None:
         if not isinstance(router, CapabilityRouter):
             raise TypeError("Super AI router is invalid.")
@@ -120,8 +132,17 @@ class RoutedSuperAIClient(BaseLLMClient):
             raise TypeError(
                 "Routed workflows must be SuperAIClient objects."
             )
+        if stats is not None and not isinstance(
+            stats,
+            InMemorySuperAIStats,
+        ):
+            raise TypeError("Super AI stats collector is invalid.")
+        if not callable(clock_ns):
+            raise TypeError("Super AI stats clock is invalid.")
         self.router = router
         self.workflows = normalized
+        self.stats = stats or InMemorySuperAIStats()
+        self._clock_ns = clock_ns
         self.last_decision: RoutingDecision | None = None
         self.last_result: HandoffResult | None = None
 
@@ -134,11 +155,22 @@ class RoutedSuperAIClient(BaseLLMClient):
         workflow = self.workflows[decision.route]
         self.last_decision = decision
         self.last_result = None
+        started_ns = self._read_clock()
+        error_type = None
         workflow.last_result = None
         try:
             return workflow.ask(messages)
+        except Exception as error:
+            error_type = self._error_type(error)
+            raise
         finally:
             self.last_result = workflow.last_result
+            self._record_metric(
+                decision,
+                workflow,
+                started_ns,
+                error_type,
+            )
 
     def stream(
         self,
@@ -168,3 +200,56 @@ class RoutedSuperAIClient(BaseLLMClient):
         raise ValueError(
             "Routed Super AI conversation requires a user message."
         )
+
+    def _record_metric(
+        self,
+        decision: RoutingDecision,
+        workflow: SuperAIClient,
+        started_ns: int | None,
+        error_type: str | None,
+    ) -> None:
+        try:
+            ended_ns = self._read_clock()
+            duration_ns = (
+                ended_ns - started_ns
+                if (
+                    started_ns is not None
+                    and ended_ns is not None
+                    and ended_ns >= started_ns
+                )
+                else 0
+            )
+            metric = SuperAIRunMetric.from_result(
+                route=decision.route,
+                signals=decision.signals,
+                expected_stage_count=len(
+                    workflow.workflow.stages
+                ),
+                result=self.last_result,
+                duration_ns=duration_ns,
+                error_type=error_type,
+            )
+            self.stats.record(metric)
+        except Exception:
+            # Observability must never change the user-facing result.
+            pass
+
+    def _read_clock(self) -> int | None:
+        try:
+            value = self._clock_ns()
+        except Exception:
+            return None
+        if (
+            not isinstance(value, int)
+            or isinstance(value, bool)
+            or value < 0
+        ):
+            return None
+        return value
+
+    @staticmethod
+    def _error_type(error: Exception) -> str:
+        name = type(error).__name__
+        if _ERROR_TYPE_PATTERN.fullmatch(name) is None:
+            return "SuperAIError"
+        return name

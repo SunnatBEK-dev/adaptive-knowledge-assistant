@@ -7,7 +7,7 @@ and small abstractions over framework-specific magic.
 ## Current status
 
 The application architecture foundation is complete through evaluation phase
-9.2, three provider integrations, and the first two-mode application workflow:
+9.3, three provider integrations, and the first two-mode application workflow:
 
 - conversation and message domain models;
 - JSON repository abstraction;
@@ -41,6 +41,8 @@ The application architecture foundation is complete through evaluation phase
 - one-, two-, and three-provider Super AI workflow variants;
 - bilingual 24-case offline route-selection benchmark;
 - route accuracy, request-count, savings, and local-latency reports;
+- bounded content-free Super AI route and stage runtime statistics;
+- a local provider-readiness check that never prints key values;
 - a composite Super AI client that returns one final response;
 - stateless MCP `2026-07-28` request metadata;
 - provider-neutral MCP client and transport contracts;
@@ -138,6 +140,10 @@ applies one or more deterministic evaluators, isolates case failures, and
 produces an aggregate quality report without retaining generated outputs.
 The specialized route suite evaluates Super AI routing without calling a
 provider or retaining benchmark prompts in its results.
+
+Phase 9.3 adds secret-free configuration readiness reporting and bounded local
+runtime statistics for routed Super AI workflows. Runtime records contain only
+route, stage, status, exception-class, and timing metadata.
 
 The CLI now exposes that foundation through two explicit product modes. Direct
 Chat sends a turn to one user-selected provider. Super AI deterministically
@@ -314,6 +320,13 @@ data. The FULL route's final stage depends on both context and reasoning, then
 returns ordinary user-facing text. Intermediate payloads are not added to the
 user-visible conversation history.
 
+Every routed Super AI run also records a bounded in-memory metric containing
+only the selected route, safe routing signals, executed/failed/blocked stage
+IDs, completion state, exception class, and elapsed time. Prompts, provider
+outputs, exception messages, credentials, and model names are not retained.
+Use `/stats` in Super AI mode to see the aggregate route, stage, success, and
+latency summary. These statistics reset when the application restarts.
+
 Direct Chat needs only the selected provider's API key and normally makes one
 model request per ordinary chat turn. Super AI needs valid Gemini, Anthropic,
 and OpenAI configuration at startup. Depending on the selected route, it makes
@@ -330,6 +343,16 @@ requests, select FULL. The decision exposes its route, required capabilities,
 and matched signals for tests and future observability.
 
 ## Run the CLI
+
+Before starting the CLI, check local provider configuration without making a
+network request or printing any secret value:
+
+```bash
+.venv/bin/python app/check_readiness.py
+```
+
+Direct Chat can use any provider reported as `READY`. Super AI is reported as
+`READY` only when all three provider API keys and model names are configured.
 
 ```bash
 .venv/bin/python app/main.py
@@ -709,9 +732,11 @@ RUN_GEMINI_INTEGRATION=1 \
 
 ## Next chapter
 
-The next useful step is an opt-in selective verification policy for only FULL
-or explicitly high-risk requests; applying a verifier to every answer would
-erase much of the router's request savings. Before automatic fallback, retries,
-or threshold tuning, paid opt-in tests should measure answer quality, token
-cost, and end-to-end latency. Parallel ready stages, Super AI streaming,
-exporters, and persistent observability storage remain optional later work.
+Selective answer verification is intentionally outside the current plan. Once
+provider credentials are available, the next gated step is the existing opt-in
+smoke suite followed by a small paid end-to-end benchmark of answer quality,
+token cost, and latency. Its measurements should guide controlled retries and
+fallback policy. Progress/cancellation, an API layer, multi-user storage,
+security hardening, and deployment remain later production work. Parallel
+ready stages, Super AI streaming, exporters, and persistent observability
+storage remain optional.
