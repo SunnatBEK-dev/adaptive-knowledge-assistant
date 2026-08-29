@@ -454,4 +454,9 @@ def test_real_client_constructor_receives_api_key(monkeypatch):
     )
 
     assert isinstance(client.client, FakeGemini)
-    assert received == {"api_key": "test-value"}
+    assert received == {
+        "api_key": "test-value",
+        "http_options": {
+            "retry_options": {"attempts": 1},
+        },
+    }

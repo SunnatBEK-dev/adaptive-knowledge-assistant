@@ -25,6 +25,9 @@ from ai_sdk.config import (
     EMBEDDING_MODEL,
     MEMORY_FILE,
     MEMORY_RETRIEVAL_K,
+    LLM_RETRY_INITIAL_DELAY,
+    LLM_RETRY_MAX_ATTEMPTS,
+    LLM_RETRY_MAX_DELAY,
     RETRIEVAL_K,
     SUPER_AI_CHAT_FILE,
     VECTOR_STORE_FILE,
@@ -49,6 +52,7 @@ from ai_sdk.llm.factory import (
     normalize_llm_provider,
 )
 from ai_sdk.llm.base import BaseLLMClient
+from ai_sdk.llm.retry import RetryPolicy
 from ai_sdk.llm.super_ai import (
     RoutedSuperAIClient,
     SuperAIClient,
@@ -293,20 +297,28 @@ def build_super_ai_manager(
     *,
     conversation_file: Path = SUPER_AI_CHAT_FILE,
 ) -> RAGConversationManager:
+    retry_policy = RetryPolicy(
+        max_attempts=LLM_RETRY_MAX_ATTEMPTS,
+        initial_delay_seconds=LLM_RETRY_INITIAL_DELAY,
+        max_delay_seconds=LLM_RETRY_MAX_DELAY,
+    )
     context_worker = create_provider_worker(
         "context",
         "Extract relevant facts, constraints, and missing evidence",
         "gemini",
+        retry_policy=retry_policy,
     )
     reasoning_worker = create_provider_worker(
         "reasoner",
         "Perform careful analysis using the available evidence",
         "anthropic",
+        retry_policy=retry_policy,
     )
     synthesis_worker = create_provider_worker(
         "synthesizer",
         "Produce one clear final answer for the user",
         "openai",
+        retry_policy=retry_policy,
     )
     coordinator = MultiAgentCoordinator([
         context_worker,

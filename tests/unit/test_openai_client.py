@@ -336,4 +336,5 @@ def test_real_client_constructor_receives_explicit_safe_configuration(
     assert received == {
         "api_key": "test-value",
         "timeout": 12.0,
+        "max_retries": 0,
     }

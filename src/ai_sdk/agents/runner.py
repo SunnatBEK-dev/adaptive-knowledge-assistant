@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from time import sleep as default_sleep
 
 from ai_sdk.agents.model import (
     AgentEvent,
@@ -7,6 +8,7 @@ from ai_sdk.agents.model import (
 )
 from ai_sdk.agents.state import AgentState
 from ai_sdk.llm.base import BaseToolLLMClient
+from ai_sdk.llm.retry import RetryPolicy
 from ai_sdk.llm.types import LLMMessage
 from ai_sdk.observability import (
     TraceCategory,
@@ -14,6 +16,7 @@ from ai_sdk.observability import (
     trace_span,
 )
 from ai_sdk.tools.executor import ToolExecutor
+from ai_sdk.tools.schema import ToolSchema
 
 
 AgentEventHandler = Callable[[AgentEvent], None]
@@ -29,6 +32,8 @@ class AgentRunner:
         *,
         max_tool_rounds: int = 8,
         tracer: Tracer | None = None,
+        retry_policy: RetryPolicy | None = None,
+        sleep: Callable[[float], None] = default_sleep,
     ) -> None:
         if not isinstance(client, BaseToolLLMClient):
             raise TypeError(
@@ -50,11 +55,20 @@ class AgentRunner:
             )
         if tracer is not None and not isinstance(tracer, Tracer):
             raise TypeError("Agent tracer must be a Tracer.")
+        if retry_policy is not None and not isinstance(
+            retry_policy,
+            RetryPolicy,
+        ):
+            raise TypeError("Agent retry policy is invalid.")
+        if not callable(sleep):
+            raise TypeError("Agent retry sleep function is invalid.")
 
         self.client = client
         self.executor = executor
         self.max_tool_rounds = max_tool_rounds
         self.tracer = tracer or executor.tracer
+        self.retry_policy = retry_policy
+        self._sleep = sleep
 
     def run(
         self,
@@ -112,15 +126,18 @@ class AgentRunner:
                     "llm.prior_event_count": len(state.events),
                 },
             ) as model_span:
-                response = self.client.complete_tool_turn(
-                    state.messages,
+                response, attempt_count = self._complete_tool_turn(
+                    state,
                     schemas,
-                    tuple(state.events),
                 )
                 if model_span is not None and isinstance(
                     response,
                     AgentModelResponse,
                 ):
+                    model_span.set_attribute(
+                        "llm.request_attempt_count",
+                        attempt_count,
+                    )
                     model_span.set_attribute(
                         "llm.tool_call_count",
                         len(response.tool_calls),
@@ -176,6 +193,31 @@ class AgentRunner:
                 return state
 
             seen_call_ids.update(call_ids)
+
+    def _complete_tool_turn(
+        self,
+        state: AgentState,
+        schemas: list[ToolSchema],
+    ) -> tuple[AgentModelResponse, int]:
+        attempt = 1
+        while True:
+            try:
+                response = self.client.complete_tool_turn(
+                    state.messages,
+                    schemas,
+                    tuple(state.events),
+                )
+                return response, attempt
+            except Exception as error:
+                policy = self.retry_policy
+                if (
+                    policy is None
+                    or attempt >= policy.max_attempts
+                    or not policy.should_retry(error)
+                ):
+                    raise
+                self._sleep(policy.delay_before_retry(attempt))
+                attempt += 1
 
     def ask(
         self,

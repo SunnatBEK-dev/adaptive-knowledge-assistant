@@ -7,7 +7,7 @@ and small abstractions over framework-specific magic.
 ## Current status
 
 The application architecture foundation is complete through evaluation phase
-9.3, three provider integrations, and the first two-mode application workflow:
+9.4, three provider integrations, and the first two-mode application workflow:
 
 - conversation and message domain models;
 - JSON repository abstraction;
@@ -43,6 +43,7 @@ The application architecture foundation is complete through evaluation phase
 - route accuracy, request-count, savings, and local-latency reports;
 - bounded content-free Super AI route and stage runtime statistics;
 - a local provider-readiness check that never prints key values;
+- bounded transient-failure retries for Super AI provider stages;
 - a composite Super AI client that returns one final response;
 - stateless MCP `2026-07-28` request metadata;
 - provider-neutral MCP client and transport contracts;
@@ -145,6 +146,12 @@ Phase 9.3 adds secret-free configuration readiness reporting and bounded local
 runtime statistics for routed Super AI workflows. Runtime records contain only
 route, stage, status, exception-class, and timing metadata.
 
+Phase 9.4 adds one explicit retry owner for Super AI provider stages. The
+provider libraries' hidden retries are disabled, and `AgentRunner` may retry
+only known transient connection, timeout, rate-limit, conflict, and server
+errors within a deterministic attempt and delay limit. Permanent failures are
+returned immediately.
+
 The CLI now exposes that foundation through two explicit product modes. Direct
 Chat sends a turn to one user-selected provider. Super AI deterministically
 selects a one-, two-, or three-provider workflow from the request, uses
@@ -170,7 +177,7 @@ RAGConversationManager
     |-- MultiAgentCoordinator -> AgentWorker(provider) -> isolated AgentRunner
     |-- SequentialHandoffCoordinator -> ordered, bounded stage outputs
     |-- DependencyHandoffCoordinator -> validated DAG -> declared inputs
-    |-- AgentRunner -> AgentState -> AgentEvent
+    |-- AgentRunner -> RetryPolicy -> AgentState -> AgentEvent
     |                 |-- ToolRegistry -> ToolExecutor -> ToolResult
     |                 `-- BaseToolLLMClient -> provider adapter
     |-- LLMAgentPlanner -> AgentPlan -> PlanStep
@@ -255,6 +262,9 @@ RETRIEVAL_K=3
 CONTEXT_TOKEN_BUDGET=3000
 CONTEXT_SUMMARY_TOKEN_BUDGET=400
 MEMORY_RETRIEVAL_K=3
+LLM_RETRY_MAX_ATTEMPTS=3
+LLM_RETRY_INITIAL_DELAY=0.25
+LLM_RETRY_MAX_DELAY=2.0
 ```
 
 Never commit `.env`, API keys, or real conversation data.
@@ -334,6 +344,14 @@ one, two, or three model requests per chat turn. If one stage fails, dependent
 stages are not run and the incomplete user turn is rolled back. Super AI
 response streaming, automatic provider fallback, and parallel execution are
 not implemented yet.
+
+Super AI provider stages default to at most three total attempts, including
+the original request. Delays use bounded exponential backoff. Authentication,
+permission, invalid-request, response-validation, and application errors are
+never retried. A retry occurs before an `AgentState` event or tool execution is
+recorded, so the same tool is not executed twice by this policy. Streaming is
+not retried because a partial response cannot be replayed safely. Successful
+model-turn traces expose only the numeric request-attempt count.
 
 `CapabilityRouter` is local and deterministic; it does not make a routing model
 request. Short ordinary prompts select FAST. Source, evidence, document, or RAG
@@ -735,8 +753,8 @@ RUN_GEMINI_INTEGRATION=1 \
 Selective answer verification is intentionally outside the current plan. Once
 provider credentials are available, the next gated step is the existing opt-in
 smoke suite followed by a small paid end-to-end benchmark of answer quality,
-token cost, and latency. Its measurements should guide controlled retries and
-fallback policy. Progress/cancellation, an API layer, multi-user storage,
-security hardening, and deployment remain later production work. Parallel
-ready stages, Super AI streaming, exporters, and persistent observability
-storage remain optional.
+token cost, latency, and observed retries. Its measurements should guide any
+automatic fallback policy. Progress/cancellation, an API layer, multi-user
+storage, security hardening, and deployment remain later production work.
+Parallel ready stages, Super AI streaming, exporters, and persistent
+observability storage remain optional.

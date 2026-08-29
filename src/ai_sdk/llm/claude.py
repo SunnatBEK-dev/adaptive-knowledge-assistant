@@ -56,6 +56,7 @@ class ClaudeClient(BaseToolLLMClient):
         self.client = Anthropic(
             api_key=resolved_api_key,
             timeout=timeout,
+            max_retries=0,
         )
 
     def ask(

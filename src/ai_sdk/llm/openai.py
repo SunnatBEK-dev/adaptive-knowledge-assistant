@@ -53,6 +53,7 @@ class OpenAIClient(BaseToolLLMClient):
         self.client = OpenAI(
             api_key=resolved_api_key,
             timeout=timeout,
+            max_retries=0,
         )
 
     def ask(

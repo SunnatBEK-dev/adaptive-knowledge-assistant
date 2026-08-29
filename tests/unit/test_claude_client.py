@@ -157,6 +157,29 @@ def test_missing_api_key_fails_before_real_client_is_created(monkeypatch):
         ClaudeClient()
 
 
+def test_real_client_disables_hidden_provider_retries(monkeypatch):
+    received = {}
+
+    def build_client(**kwargs):
+        received.update(kwargs)
+        return FakeAnthropicClient()
+
+    monkeypatch.setattr(claude_module, "Anthropic", build_client)
+
+    client = ClaudeClient(
+        api_key="test-value",
+        model="claude-test",
+        timeout=12.0,
+    )
+
+    assert isinstance(client.client, FakeAnthropicClient)
+    assert received == {
+        "api_key": "test-value",
+        "timeout": 12.0,
+        "max_retries": 0,
+    }
+
+
 def test_ask_with_tools_completes_claude_tool_loop():
     fake = QueuedAnthropicClient([
         response(

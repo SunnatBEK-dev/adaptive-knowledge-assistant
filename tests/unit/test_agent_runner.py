@@ -9,6 +9,7 @@ from ai_sdk.agents import (
     AgentTextBlock,
 )
 from ai_sdk.llm.base import BaseToolLLMClient
+from ai_sdk.llm.retry import RetryPolicy
 from ai_sdk.observability import (
     InMemoryTraceCollector,
     TraceStatus,
@@ -38,7 +39,10 @@ class ScriptedAgentClient(BaseToolLLMClient):
 
     def complete_tool_turn(self, messages, schemas, events):
         self.turns.append((messages, schemas, events))
-        return self.responses.pop(0)
+        response = self.responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
 
 
 def build_executor(handler=lambda value: value * 2):
@@ -204,6 +208,11 @@ def test_runner_traces_nested_model_and_tool_operations():
     assert [record.name for record in records].count(
         "llm.tool_turn"
     ) == 2
+    assert all(
+        record.attributes["llm.request_attempt_count"] == 1
+        for record in records
+        if record.name == "llm.tool_turn"
+    )
     assert any(record.name == "tool.execute" for record in children)
     assert all(record.trace_id == root.trace_id for record in records)
     assert root.attributes["agent.tool_round_count"] == 1
@@ -263,6 +272,97 @@ def test_runner_ask_raises_when_max_rounds_are_reached():
         ])
 
 
+def test_runner_retries_transient_failures_before_state_mutation():
+    class TemporaryError(Exception):
+        status_code = 503
+
+    collector = InMemoryTraceCollector()
+    client = ScriptedAgentClient([
+        TemporaryError("private one"),
+        TimeoutError("private two"),
+        tool_response("call_1", 3),
+        final_response("Recovered"),
+    ])
+    delays = []
+    executions = []
+    runner = AgentRunner(
+        client,
+        build_executor(
+            lambda value: executions.append(value) or value * 2
+        ),
+        retry_policy=RetryPolicy(
+            max_attempts=3,
+            initial_delay_seconds=0.25,
+            max_delay_seconds=1.0,
+        ),
+        sleep=delays.append,
+        tracer=Tracer(collector),
+    )
+
+    state = runner.run([{"role": "user", "content": "Question"}])
+
+    assert state.final_text == "Recovered"
+    assert len(state.events) == 2
+    assert state.tool_rounds == 1
+    assert executions == [3]
+    assert len(client.turns) == 4
+    assert all(turn[2] == () for turn in client.turns[:3])
+    assert client.turns[3][2] == (state.events[0],)
+    assert delays == [0.25, 0.5]
+    model_records = [
+        record
+        for record in collector.records()
+        if record.name == "llm.tool_turn"
+    ]
+    assert [
+        record.attributes["llm.request_attempt_count"]
+        for record in model_records
+    ] == [3, 1]
+
+
+def test_runner_does_not_retry_permanent_or_exhausted_failures():
+    permanent = ScriptedAgentClient([
+        RuntimeError("invalid request"),
+        final_response(),
+    ])
+    permanent_delays = []
+    permanent_runner = AgentRunner(
+        permanent,
+        build_executor(),
+        retry_policy=RetryPolicy(),
+        sleep=permanent_delays.append,
+    )
+
+    with pytest.raises(RuntimeError, match="invalid request"):
+        permanent_runner.run([
+            {"role": "user", "content": "Question"},
+        ])
+    assert len(permanent.turns) == 1
+    assert permanent_delays == []
+
+    exhausted = ScriptedAgentClient([
+        TimeoutError("one"),
+        TimeoutError("two"),
+    ])
+    exhausted_delays = []
+    exhausted_runner = AgentRunner(
+        exhausted,
+        build_executor(),
+        retry_policy=RetryPolicy(
+            max_attempts=2,
+            initial_delay_seconds=0,
+            max_delay_seconds=0,
+        ),
+        sleep=exhausted_delays.append,
+    )
+    with pytest.raises(TimeoutError, match="two"):
+        exhausted_runner.run([
+            {"role": "user", "content": "Question"},
+        ])
+    assert len(exhausted.turns) == 2
+    assert exhausted_delays == [0]
+
+
 @pytest.mark.parametrize(
     "responses",
     [
@@ -313,6 +413,18 @@ def test_runner_rejects_invalid_dependencies_and_outputs():
             ScriptedAgentClient([final_response()]),
             build_executor(),
             tracer=object(),
+        )
+    with pytest.raises(TypeError, match="retry policy"):
+        AgentRunner(
+            ScriptedAgentClient([final_response()]),
+            build_executor(),
+            retry_policy=object(),
+        )
+    with pytest.raises(TypeError, match="sleep"):
+        AgentRunner(
+            ScriptedAgentClient([final_response()]),
+            build_executor(),
+            sleep=object(),
         )
 
     runner = AgentRunner(

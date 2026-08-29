@@ -197,8 +197,17 @@ def test_super_ai_builder_configures_three_provider_stages(
     received = {}
     expected = object()
 
-    def fake_worker(name, description, provider):
+    retry_policies = []
+
+    def fake_worker(
+        name,
+        description,
+        provider,
+        *,
+        retry_policy,
+    ):
         providers.append(provider)
+        retry_policies.append(retry_policy)
         return AgentWorker(
             name,
             description,
@@ -231,6 +240,8 @@ def test_super_ai_builder_configures_three_provider_stages(
 
     assert result is expected
     assert providers == ["gemini", "anthropic", "openai"]
+    assert len({id(policy) for policy in retry_policies}) == 1
+    assert retry_policies[0].max_attempts == 3
     assert received["conversation_file"] == chat_file
     routed = received["client"]
     assert isinstance(routed, RoutedSuperAIClient)

@@ -70,7 +70,12 @@ class GeminiClient(BaseToolLLMClient):
                 "GEMINI_API_KEY is not configured."
             )
 
-        self.client = genai.Client(api_key=resolved_api_key)
+        self.client = genai.Client(
+            api_key=resolved_api_key,
+            http_options={
+                "retry_options": {"attempts": 1},
+            },
+        )
 
     def ask(
         self,

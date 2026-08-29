@@ -12,6 +12,7 @@ from ai_sdk.agents.state import AgentState
 
 
 if TYPE_CHECKING:
+    from ai_sdk.llm.retry import RetryPolicy
     from ai_sdk.observability import Tracer
     from ai_sdk.tools.executor import ToolExecutor
 
@@ -332,6 +333,7 @@ def create_provider_worker(
     *,
     max_tool_rounds: int = 8,
     tracer: Tracer | None = None,
+    retry_policy: RetryPolicy | None = None,
 ) -> AgentWorker:
     """Build a worker bound to one configured LLM provider."""
     from ai_sdk.llm.factory import (
@@ -356,6 +358,7 @@ def create_provider_worker(
         active_executor,
         max_tool_rounds=max_tool_rounds,
         tracer=tracer,
+        retry_policy=retry_policy,
     )
     return AgentWorker(
         name=name,

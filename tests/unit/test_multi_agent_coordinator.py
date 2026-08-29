@@ -16,6 +16,7 @@ from ai_sdk.agents import (
     create_provider_worker,
 )
 from ai_sdk.llm.base import BaseToolLLMClient
+from ai_sdk.llm.retry import RetryPolicy
 from ai_sdk.tools import (
     ToolCall,
     ToolExecutor,
@@ -244,6 +245,7 @@ def test_provider_worker_factory_binds_provider_and_executor(
         create_client,
     )
     executor = ToolExecutor(ToolRegistry())
+    retry_policy = RetryPolicy(max_attempts=2)
 
     provider_worker = create_provider_worker(
         "researcher",
@@ -251,6 +253,7 @@ def test_provider_worker_factory_binds_provider_and_executor(
         " Gemini ",
         executor,
         max_tool_rounds=3,
+        retry_policy=retry_policy,
     )
 
     assert created_for == ["gemini"]
@@ -258,6 +261,7 @@ def test_provider_worker_factory_binds_provider_and_executor(
     assert provider_worker.runner.client is client
     assert provider_worker.runner.executor is executor
     assert provider_worker.runner.max_tool_rounds == 3
+    assert provider_worker.runner.retry_policy is retry_policy
 
 
 def test_provider_worker_factory_can_use_empty_tool_registry(

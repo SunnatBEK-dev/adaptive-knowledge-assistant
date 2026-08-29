@@ -66,3 +66,15 @@ CONTEXT_SUMMARY_TOKEN_BUDGET = int(
 MEMORY_RETRIEVAL_K = int(
     os.getenv("MEMORY_RETRIEVAL_K", "3")
 )
+
+LLM_RETRY_MAX_ATTEMPTS = int(
+    os.getenv("LLM_RETRY_MAX_ATTEMPTS", "3")
+)
+
+LLM_RETRY_INITIAL_DELAY = float(
+    os.getenv("LLM_RETRY_INITIAL_DELAY", "0.25")
+)
+
+LLM_RETRY_MAX_DELAY = float(
+    os.getenv("LLM_RETRY_MAX_DELAY", "2.0")
+)
