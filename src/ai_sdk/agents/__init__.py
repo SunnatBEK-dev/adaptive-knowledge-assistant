@@ -35,6 +35,14 @@ from ai_sdk.agents.planner import (
     BaseAgentPlanner,
     LLMAgentPlanner,
 )
+from ai_sdk.agents.progress import (
+    CancellationToken,
+    WorkflowCancelledError,
+    WorkflowProgressEvent,
+    WorkflowProgressHandler,
+    WorkflowProgressReporter,
+    WorkflowProgressStatus,
+)
 from ai_sdk.agents.reflection import (
     AgentReflection,
     BaseAgentReflector,
@@ -75,6 +83,7 @@ __all__ = [
     "BaseAgentPlanner",
     "BaseAgentReflector",
     "CapabilityRouter",
+    "CancellationToken",
     "CoordinationError",
     "CoordinationResult",
     "DependencyHandoffCoordinator",
@@ -97,4 +106,9 @@ __all__ = [
     "RoutingSignal",
     "SequentialHandoffCoordinator",
     "SuperAIRoute",
+    "WorkflowCancelledError",
+    "WorkflowProgressEvent",
+    "WorkflowProgressHandler",
+    "WorkflowProgressReporter",
+    "WorkflowProgressStatus",
 ]

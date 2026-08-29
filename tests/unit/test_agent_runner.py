@@ -7,6 +7,8 @@ from ai_sdk.agents import (
     AgentState,
     AgentStopReason,
     AgentTextBlock,
+    CancellationToken,
+    WorkflowCancelledError,
 )
 from ai_sdk.llm.base import BaseToolLLMClient
 from ai_sdk.llm.retry import RetryPolicy
@@ -363,6 +365,43 @@ def test_runner_does_not_retry_permanent_or_exhausted_failures():
     assert exhausted_delays == [0]
 
 
+def test_cancellation_stops_before_request_and_before_retry():
+    cancelled = CancellationToken()
+    cancelled.cancel()
+    untouched = ScriptedAgentClient([final_response()])
+    runner = AgentRunner(untouched, build_executor())
+
+    with pytest.raises(WorkflowCancelledError):
+        runner.run(
+            [{"role": "user", "content": "Question"}],
+            cancellation=cancelled,
+        )
+    assert untouched.turns == []
+
+    class CancellingToken(CancellationToken):
+        def wait(self, timeout_seconds):
+            self.cancel()
+            return True
+
+    retry_token = CancellingToken()
+    transient = ScriptedAgentClient([
+        TimeoutError("temporary"),
+        final_response(),
+    ])
+    retry_runner = AgentRunner(
+        transient,
+        build_executor(),
+        retry_policy=RetryPolicy(),
+    )
+
+    with pytest.raises(WorkflowCancelledError):
+        retry_runner.run(
+            [{"role": "user", "content": "Question"}],
+            cancellation=retry_token,
+        )
+    assert len(transient.turns) == 1
+
+
 @pytest.mark.parametrize(
     "responses",
     [
@@ -425,6 +464,14 @@ def test_runner_rejects_invalid_dependencies_and_outputs():
             ScriptedAgentClient([final_response()]),
             build_executor(),
             sleep=object(),
+        )
+    with pytest.raises(TypeError, match="cancellation token"):
+        AgentRunner(
+            ScriptedAgentClient([final_response()]),
+            build_executor(),
+        ).run(
+            [{"role": "user", "content": "Question"}],
+            cancellation=object(),
         )
 
     runner = AgentRunner(

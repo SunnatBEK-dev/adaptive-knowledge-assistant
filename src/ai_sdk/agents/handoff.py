@@ -12,6 +12,12 @@ from ai_sdk.agents.coordination import (
     CoordinationError,
     MultiAgentCoordinator,
 )
+from ai_sdk.agents.progress import (
+    CancellationToken,
+    WorkflowCancelledError,
+    WorkflowProgressReporter,
+    WorkflowProgressStatus,
+)
 
 
 class HandoffOutputFormat(str, Enum):
@@ -452,17 +458,38 @@ class _HandoffCoordinatorBase:
         self.stages = normalized_stages
         self.max_handoff_chars = max_handoff_chars
 
-    def run(self, request: str) -> HandoffResult:
+    def run(
+        self,
+        request: str,
+        *,
+        progress: WorkflowProgressReporter | None = None,
+        cancellation: CancellationToken | None = None,
+    ) -> HandoffResult:
         if not isinstance(request, str) or not request.strip():
             raise ValueError(
                 "Super AI request cannot be empty."
             )
+        self._validate_control(progress, cancellation)
 
         original_request = request.strip()
         results: list[HandoffStageResult] = []
         completed_stages: list[HandoffStageResult] = []
 
         for stage in self.stages:
+            partial_result = HandoffResult(
+                results,
+                len(self.stages),
+            )
+            self._raise_if_cancelled(
+                cancellation,
+                partial_result,
+            )
+            self._emit_progress(
+                progress,
+                WorkflowProgressStatus.STAGE_STARTED,
+                stage.id,
+                len(completed_stages),
+            )
             task = AgentTask(
                 stage.id,
                 stage.worker_name,
@@ -472,9 +499,15 @@ class _HandoffCoordinatorBase:
                     completed_stages,
                 ),
             )
-            task_result = self.coordinator.run(
-                [task]
-            ).results[0]
+            try:
+                task_result = self.coordinator.run(
+                    [task],
+                    cancellation=cancellation,
+                ).results[0]
+            except WorkflowCancelledError as error:
+                raise WorkflowCancelledError(
+                    HandoffResult(results, len(self.stages))
+                ) from error
             payload = None
             if (
                 task_result.status
@@ -495,11 +528,65 @@ class _HandoffCoordinatorBase:
             results.append(stage_result)
 
             if task_result.status is AgentTaskStatus.FAILED:
+                self._emit_progress(
+                    progress,
+                    WorkflowProgressStatus.STAGE_FAILED,
+                    stage.id,
+                    len(completed_stages),
+                )
                 break
 
             completed_stages.append(stage_result)
+            self._emit_progress(
+                progress,
+                WorkflowProgressStatus.STAGE_COMPLETED,
+                stage.id,
+                len(completed_stages),
+            )
 
-        return HandoffResult(results, len(self.stages))
+        final_result = HandoffResult(results, len(self.stages))
+        self._raise_if_cancelled(cancellation, final_result)
+        return final_result
+
+    def _validate_control(
+        self,
+        progress: WorkflowProgressReporter | None,
+        cancellation: CancellationToken | None,
+    ) -> None:
+        if progress is not None and not isinstance(
+            progress,
+            WorkflowProgressReporter,
+        ):
+            raise TypeError("Workflow progress reporter is invalid.")
+        if cancellation is not None and not isinstance(
+            cancellation,
+            CancellationToken,
+        ):
+            raise TypeError("Workflow cancellation token is invalid.")
+
+    def _emit_progress(
+        self,
+        progress: WorkflowProgressReporter | None,
+        status: WorkflowProgressStatus,
+        stage_id: str,
+        completed_stage_count: int,
+    ) -> None:
+        if progress is None:
+            return
+        progress.emit(
+            status,
+            stage_id=stage_id,
+            completed_stage_count=completed_stage_count,
+            expected_stage_count=len(self.stages),
+        )
+
+    @staticmethod
+    def _raise_if_cancelled(
+        cancellation: CancellationToken | None,
+        partial_result: HandoffResult,
+    ) -> None:
+        if cancellation is not None and cancellation.is_cancelled:
+            raise WorkflowCancelledError(partial_result)
 
     def _stage_instruction(
         self,
@@ -630,11 +717,18 @@ class DependencyHandoffCoordinator(_HandoffCoordinatorBase):
         )
         self.execution_stages = self._execution_order()
 
-    def run(self, request: str) -> DependencyHandoffResult:
+    def run(
+        self,
+        request: str,
+        *,
+        progress: WorkflowProgressReporter | None = None,
+        cancellation: CancellationToken | None = None,
+    ) -> DependencyHandoffResult:
         if not isinstance(request, str) or not request.strip():
             raise ValueError(
                 "Super AI request cannot be empty."
             )
+        self._validate_control(progress, cancellation)
 
         original_request = request.strip()
         results: list[HandoffStageResult] = []
@@ -642,6 +736,15 @@ class DependencyHandoffCoordinator(_HandoffCoordinatorBase):
         blocked_stage_ids: list[str] = []
 
         for stage in self.execution_stages:
+            partial_result = DependencyHandoffResult(
+                results,
+                len(self.stages),
+                blocked_stage_ids,
+            )
+            self._raise_if_cancelled(
+                cancellation,
+                partial_result,
+            )
             dependency_results = [
                 results_by_id[dependency]
                 for dependency in stage.depends_on
@@ -656,7 +759,20 @@ class DependencyHandoffCoordinator(_HandoffCoordinatorBase):
                 )
             ):
                 blocked_stage_ids.append(stage.id)
+                self._emit_progress(
+                    progress,
+                    WorkflowProgressStatus.STAGE_BLOCKED,
+                    stage.id,
+                    self._completed_count(results),
+                )
                 continue
+
+            self._emit_progress(
+                progress,
+                WorkflowProgressStatus.STAGE_STARTED,
+                stage.id,
+                self._completed_count(results),
+            )
 
             try:
                 instruction = self._dependency_instruction(
@@ -674,9 +790,19 @@ class DependencyHandoffCoordinator(_HandoffCoordinatorBase):
                     stage.worker_name,
                     instruction,
                 )
-                task_result = self.coordinator.run(
-                    [task]
-                ).results[0]
+                try:
+                    task_result = self.coordinator.run(
+                        [task],
+                        cancellation=cancellation,
+                    ).results[0]
+                except WorkflowCancelledError as error:
+                    raise WorkflowCancelledError(
+                        DependencyHandoffResult(
+                            results,
+                            len(self.stages),
+                            blocked_stage_ids,
+                        )
+                    ) from error
                 payload = None
                 if (
                     task_result.status
@@ -698,10 +824,34 @@ class DependencyHandoffCoordinator(_HandoffCoordinatorBase):
             results.append(stage_result)
             results_by_id[stage.id] = stage_result
 
-        return DependencyHandoffResult(
+            status = (
+                WorkflowProgressStatus.STAGE_COMPLETED
+                if stage_result.task_result.status
+                is AgentTaskStatus.COMPLETED
+                else WorkflowProgressStatus.STAGE_FAILED
+            )
+            self._emit_progress(
+                progress,
+                status,
+                stage.id,
+                self._completed_count(results),
+            )
+
+        final_result = DependencyHandoffResult(
             results,
             len(self.stages),
             blocked_stage_ids,
+        )
+        self._raise_if_cancelled(cancellation, final_result)
+        return final_result
+
+    @staticmethod
+    def _completed_count(
+        results: Sequence[HandoffStageResult],
+    ) -> int:
+        return sum(
+            result.task_result.status is AgentTaskStatus.COMPLETED
+            for result in results
         )
 
     def _execution_order(self) -> tuple[HandoffStage, ...]:

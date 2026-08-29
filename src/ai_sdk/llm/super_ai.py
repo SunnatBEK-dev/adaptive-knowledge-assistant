@@ -1,7 +1,9 @@
 import re
 from collections.abc import Callable, Iterator, Mapping
+from threading import Lock
 from time import perf_counter_ns
 
+from ai_sdk.agents.coordination import AgentTaskStatus
 from ai_sdk.agents.handoff import (
     DependencyHandoffCoordinator,
     HandoffResult,
@@ -11,6 +13,14 @@ from ai_sdk.agents.routing import (
     CapabilityRouter,
     RoutingDecision,
     SuperAIRoute,
+)
+from ai_sdk.agents.progress import (
+    CancellationToken,
+    WorkflowCancelledError,
+    WorkflowProgressEvent,
+    WorkflowProgressHandler,
+    WorkflowProgressReporter,
+    WorkflowProgressStatus,
 )
 from ai_sdk.llm.base import BaseLLMClient
 from ai_sdk.llm.super_ai_stats import (
@@ -50,8 +60,26 @@ class SuperAIClient(BaseLLMClient):
         self,
         messages: list[LLMMessage],
     ) -> str:
+        return self.ask_with_control(messages)
+
+    def ask_with_control(
+        self,
+        messages: list[LLMMessage],
+        *,
+        progress: WorkflowProgressReporter | None = None,
+        cancellation: CancellationToken | None = None,
+    ) -> str:
         transcript = self._transcript(messages)
-        result = self.workflow.run(transcript)
+        try:
+            result = self.workflow.run(
+                transcript,
+                progress=progress,
+                cancellation=cancellation,
+            )
+        except WorkflowCancelledError as error:
+            if isinstance(error.partial_result, HandoffResult):
+                self.last_result = error.partial_result
+            raise
         self.last_result = result
         if not result.completed:
             failed = result.failed_stage
@@ -107,6 +135,7 @@ class RoutedSuperAIClient(BaseLLMClient):
         *,
         stats: InMemorySuperAIStats | None = None,
         clock_ns: Callable[[], int] = perf_counter_ns,
+        progress_handler: WorkflowProgressHandler | None = None,
     ) -> None:
         if not isinstance(router, CapabilityRouter):
             raise TypeError("Super AI router is invalid.")
@@ -139,29 +168,88 @@ class RoutedSuperAIClient(BaseLLMClient):
             raise TypeError("Super AI stats collector is invalid.")
         if not callable(clock_ns):
             raise TypeError("Super AI stats clock is invalid.")
+        if progress_handler is not None and not callable(
+            progress_handler
+        ):
+            raise TypeError("Super AI progress handler is invalid.")
         self.router = router
         self.workflows = normalized
         self.stats = stats or InMemorySuperAIStats()
         self._clock_ns = clock_ns
+        self._progress_handler = progress_handler
+        self._active_lock = Lock()
+        self._active_cancellation: CancellationToken | None = None
         self.last_decision: RoutingDecision | None = None
         self.last_result: HandoffResult | None = None
+        self.last_progress_event: WorkflowProgressEvent | None = None
 
     def ask(
         self,
         messages: list[LLMMessage],
     ) -> str:
+        cancellation = self._begin_run()
+        try:
+            return self._ask(messages, cancellation)
+        finally:
+            self._finish_run(cancellation)
+
+    def _ask(
+        self,
+        messages: list[LLMMessage],
+        cancellation: CancellationToken,
+    ) -> str:
         request = self._latest_user_content(messages)
         decision = self.router.route(request)
         workflow = self.workflows[decision.route]
+        expected_stage_count = len(workflow.workflow.stages)
+        reporter = WorkflowProgressReporter(
+            decision.route.value,
+            self._handle_progress,
+        )
         self.last_decision = decision
         self.last_result = None
+        self.last_progress_event = None
         started_ns = self._read_clock()
         error_type = None
         workflow.last_result = None
+        reporter.emit(
+            WorkflowProgressStatus.ROUTE_SELECTED,
+            completed_stage_count=0,
+            expected_stage_count=expected_stage_count,
+        )
         try:
-            return workflow.ask(messages)
+            response = workflow.ask_with_control(
+                messages,
+                progress=reporter,
+                cancellation=cancellation,
+            )
+            reporter.emit(
+                WorkflowProgressStatus.WORKFLOW_COMPLETED,
+                completed_stage_count=expected_stage_count,
+                expected_stage_count=expected_stage_count,
+            )
+            return response
+        except WorkflowCancelledError as error:
+            error_type = self._error_type(error)
+            self.last_result = workflow.last_result
+            reporter.emit(
+                WorkflowProgressStatus.WORKFLOW_CANCELLED,
+                completed_stage_count=(
+                    self._completed_stage_count(self.last_result)
+                ),
+                expected_stage_count=expected_stage_count,
+            )
+            raise
         except Exception as error:
             error_type = self._error_type(error)
+            self.last_result = workflow.last_result
+            reporter.emit(
+                WorkflowProgressStatus.WORKFLOW_FAILED,
+                completed_stage_count=(
+                    self._completed_stage_count(self.last_result)
+                ),
+                expected_stage_count=expected_stage_count,
+            )
             raise
         finally:
             self.last_result = workflow.last_result
@@ -171,6 +259,15 @@ class RoutedSuperAIClient(BaseLLMClient):
                 started_ns,
                 error_type,
             )
+
+    def cancel(self) -> bool:
+        """Request cancellation of the active run at its next boundary."""
+
+        with self._active_lock:
+            token = self._active_cancellation
+            if token is None:
+                return False
+            return token.cancel()
 
     def stream(
         self,
@@ -233,6 +330,37 @@ class RoutedSuperAIClient(BaseLLMClient):
         except Exception:
             # Observability must never change the user-facing result.
             pass
+
+    def _begin_run(self) -> CancellationToken:
+        with self._active_lock:
+            if self._active_cancellation is not None:
+                raise RuntimeError(
+                    "Concurrent Super AI runs are not supported."
+                )
+            token = CancellationToken()
+            self._active_cancellation = token
+            return token
+
+    def _finish_run(self, token: CancellationToken) -> None:
+        with self._active_lock:
+            if self._active_cancellation is token:
+                self._active_cancellation = None
+
+    def _handle_progress(self, event: WorkflowProgressEvent) -> None:
+        self.last_progress_event = event
+        if self._progress_handler is not None:
+            self._progress_handler(event)
+
+    @staticmethod
+    def _completed_stage_count(
+        result: HandoffResult | None,
+    ) -> int:
+        if result is None:
+            return 0
+        return sum(
+            stage.task_result.status is AgentTaskStatus.COMPLETED
+            for stage in result.stages
+        )
 
     def _read_clock(self) -> int | None:
         try:

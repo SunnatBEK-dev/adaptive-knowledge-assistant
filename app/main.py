@@ -13,6 +13,8 @@ from ai_sdk.agents import (
     HandoffStage,
     MultiAgentCoordinator,
     SuperAIRoute,
+    WorkflowProgressEvent,
+    WorkflowProgressStatus,
     create_provider_worker,
 )
 from ai_sdk.config import (
@@ -201,6 +203,33 @@ def print_super_ai_stats(
     )
 
 
+def print_super_ai_progress(event: WorkflowProgressEvent) -> None:
+    if event.status is WorkflowProgressStatus.ROUTE_SELECTED:
+        print(
+            f"\nSuper AI route: {event.route.upper()} "
+            f"({event.expected_stage_count} stages)"
+        )
+        return
+    if event.stage_id is not None:
+        labels = {
+            WorkflowProgressStatus.STAGE_STARTED: "started",
+            WorkflowProgressStatus.STAGE_COMPLETED: "completed",
+            WorkflowProgressStatus.STAGE_FAILED: "failed",
+            WorkflowProgressStatus.STAGE_BLOCKED: "blocked",
+        }
+        print(
+            f"- {event.stage_id}: "
+            f"{labels[event.status]}"
+        )
+        return
+    labels = {
+        WorkflowProgressStatus.WORKFLOW_COMPLETED: "completed",
+        WorkflowProgressStatus.WORKFLOW_FAILED: "failed",
+        WorkflowProgressStatus.WORKFLOW_CANCELLED: "cancelled",
+    }
+    print(f"Super AI workflow: {labels[event.status]}")
+
+
 def load_document(file_path: str) -> Document:
     return TextDocumentLoader().load(
         Path(file_path)
@@ -296,6 +325,10 @@ def build_direct_chat_manager(
 def build_super_ai_manager(
     *,
     conversation_file: Path = SUPER_AI_CHAT_FILE,
+    progress_handler: Callable[
+        [WorkflowProgressEvent],
+        None,
+    ] | None = None,
 ) -> RAGConversationManager:
     retry_policy = RetryPolicy(
         max_attempts=LLM_RETRY_MAX_ATTEMPTS,
@@ -385,6 +418,7 @@ def build_super_ai_manager(
                 final_stage("context", "reasoning"),
             ]),
         },
+        progress_handler=progress_handler,
     )
     return build_manager(
         conversation_file=conversation_file,
@@ -621,7 +655,9 @@ def main() -> None:
         return
 
     run_cli(
-        build_super_ai_manager(),
+        build_super_ai_manager(
+            progress_handler=print_super_ai_progress,
+        ),
         title="Super AI",
         stream_responses=False,
     )

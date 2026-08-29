@@ -7,6 +7,10 @@ from ai_sdk.agents.model import (
     AgentStopReason,
 )
 from ai_sdk.agents.state import AgentState
+from ai_sdk.agents.progress import (
+    CancellationToken,
+    WorkflowCancelledError,
+)
 from ai_sdk.llm.base import BaseToolLLMClient
 from ai_sdk.llm.retry import RetryPolicy
 from ai_sdk.llm.types import LLMMessage
@@ -75,7 +79,9 @@ class AgentRunner:
         messages: list[LLMMessage],
         *,
         on_event: AgentEventHandler | None = None,
+        cancellation: CancellationToken | None = None,
     ) -> AgentState:
+        self._validate_cancellation(cancellation)
         with trace_span(
             self.tracer,
             "agent.run",
@@ -85,7 +91,11 @@ class AgentRunner:
                 "agent.max_tool_rounds": self.max_tool_rounds,
             },
         ) as span:
-            state = self._run(messages, on_event=on_event)
+            state = self._run(
+                messages,
+                on_event=on_event,
+                cancellation=cancellation,
+            )
             if span is not None:
                 span.set_attribute(
                     "agent.tool_round_count",
@@ -107,6 +117,7 @@ class AgentRunner:
         messages: list[LLMMessage],
         *,
         on_event: AgentEventHandler | None = None,
+        cancellation: CancellationToken | None = None,
     ) -> AgentState:
         if on_event is not None and not callable(on_event):
             raise TypeError("Agent event handler must be callable.")
@@ -116,6 +127,7 @@ class AgentRunner:
         seen_call_ids: set[str] = set()
 
         while True:
+            self._raise_if_cancelled(cancellation)
             with trace_span(
                 self.tracer,
                 "llm.tool_turn",
@@ -129,6 +141,7 @@ class AgentRunner:
                 response, attempt_count = self._complete_tool_turn(
                     state,
                     schemas,
+                    cancellation,
                 )
                 if model_span is not None and isinstance(
                     response,
@@ -147,6 +160,8 @@ class AgentRunner:
                 raise TypeError(
                     "Agent client response is invalid."
                 )
+
+            self._raise_if_cancelled(cancellation)
 
             calls = response.tool_calls
             call_ids = [call.id for call in calls]
@@ -174,10 +189,17 @@ class AgentRunner:
                 )
                 return state
 
-            results = tuple(
-                self.executor.execute(call, tracer=self.tracer)
-                for call in calls
-            )
+            result_items = []
+            for call in calls:
+                self._raise_if_cancelled(cancellation)
+                result_items.append(
+                    self.executor.execute(
+                        call,
+                        tracer=self.tracer,
+                    )
+                )
+            self._raise_if_cancelled(cancellation)
+            results = tuple(result_items)
             event = AgentEvent(
                 iteration=len(state.events) + 1,
                 response=response,
@@ -198,9 +220,11 @@ class AgentRunner:
         self,
         state: AgentState,
         schemas: list[ToolSchema],
+        cancellation: CancellationToken | None,
     ) -> tuple[AgentModelResponse, int]:
         attempt = 1
         while True:
+            self._raise_if_cancelled(cancellation)
             try:
                 response = self.client.complete_tool_turn(
                     state.messages,
@@ -209,6 +233,7 @@ class AgentRunner:
                 )
                 return response, attempt
             except Exception as error:
+                self._raise_if_cancelled(cancellation)
                 policy = self.retry_policy
                 if (
                     policy is None
@@ -216,7 +241,11 @@ class AgentRunner:
                     or not policy.should_retry(error)
                 ):
                     raise
-                self._sleep(policy.delay_before_retry(attempt))
+                delay = policy.delay_before_retry(attempt)
+                if cancellation is None:
+                    self._sleep(delay)
+                elif cancellation.wait(delay):
+                    raise WorkflowCancelledError() from None
                 attempt += 1
 
     def ask(
@@ -224,8 +253,13 @@ class AgentRunner:
         messages: list[LLMMessage],
         *,
         on_event: AgentEventHandler | None = None,
+        cancellation: CancellationToken | None = None,
     ) -> str:
-        state = self.run(messages, on_event=on_event)
+        state = self.run(
+            messages,
+            on_event=on_event,
+            cancellation=cancellation,
+        )
 
         if state.stop_reason is AgentStopReason.MAX_TOOL_ROUNDS:
             raise RuntimeError(
@@ -233,6 +267,23 @@ class AgentRunner:
             )
 
         return state.final_text or ""
+
+    @staticmethod
+    def _validate_cancellation(
+        cancellation: CancellationToken | None,
+    ) -> None:
+        if cancellation is not None and not isinstance(
+            cancellation,
+            CancellationToken,
+        ):
+            raise TypeError("Agent cancellation token is invalid.")
+
+    @staticmethod
+    def _raise_if_cancelled(
+        cancellation: CancellationToken | None,
+    ) -> None:
+        if cancellation is not None and cancellation.is_cancelled:
+            raise WorkflowCancelledError()
 
     @staticmethod
     def _record(

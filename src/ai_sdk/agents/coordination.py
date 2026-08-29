@@ -7,6 +7,10 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from ai_sdk.agents.model import AgentStopReason
+from ai_sdk.agents.progress import (
+    CancellationToken,
+    WorkflowCancelledError,
+)
 from ai_sdk.agents.runner import AgentRunner
 from ai_sdk.agents.state import AgentState
 
@@ -241,11 +245,18 @@ class MultiAgentCoordinator:
     def run(
         self,
         tasks: Sequence[AgentTask],
+        *,
+        cancellation: CancellationToken | None = None,
     ) -> CoordinationResult:
+        if cancellation is not None and not isinstance(
+            cancellation,
+            CancellationToken,
+        ):
+            raise TypeError("Coordinator cancellation token is invalid.")
         normalized_tasks = tuple(tasks)
         self._validate_tasks(normalized_tasks)
         results = [
-            self._run_task(task)
+            self._run_task(task, cancellation)
             for task in normalized_tasks
         ]
         return CoordinationResult(results)
@@ -282,7 +293,11 @@ class MultiAgentCoordinator:
                 + "."
             )
 
-    def _run_task(self, task: AgentTask) -> AgentTaskResult:
+    def _run_task(
+        self,
+        task: AgentTask,
+        cancellation: CancellationToken | None,
+    ) -> AgentTaskResult:
         worker = self._workers[task.worker_name]
         assignment = (
             f"Worker: {worker.name}\n"
@@ -291,10 +306,15 @@ class MultiAgentCoordinator:
         )
 
         try:
-            state = worker.runner.run([{
-                "role": "user",
-                "content": assignment,
-            }])
+            state = worker.runner.run(
+                [{
+                    "role": "user",
+                    "content": assignment,
+                }],
+                cancellation=cancellation,
+            )
+        except WorkflowCancelledError:
+            raise
         except Exception as error:
             return AgentTaskResult(
                 task=task,

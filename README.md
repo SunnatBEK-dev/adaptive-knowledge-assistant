@@ -7,7 +7,7 @@ and small abstractions over framework-specific magic.
 ## Current status
 
 The application architecture foundation is complete through evaluation phase
-9.4, three provider integrations, and the first two-mode application workflow:
+9.5, three provider integrations, and the first two-mode application workflow:
 
 - conversation and message domain models;
 - JSON repository abstraction;
@@ -44,6 +44,7 @@ The application architecture foundation is complete through evaluation phase
 - bounded content-free Super AI route and stage runtime statistics;
 - a local provider-readiness check that never prints key values;
 - bounded transient-failure retries for Super AI provider stages;
+- ordered content-free Super AI progress and cooperative cancellation;
 - a composite Super AI client that returns one final response;
 - stateless MCP `2026-07-28` request metadata;
 - provider-neutral MCP client and transport contracts;
@@ -152,6 +153,11 @@ only known transient connection, timeout, rate-limit, conflict, and server
 errors within a deterministic attempt and delay limit. Permanent failures are
 returned immediately.
 
+Phase 9.5 adds ordered route, stage, and terminal progress events plus
+thread-safe cooperative cancellation. Cancellation is checked before provider
+attempts, retries, tool execution, and handoff stages without retaining user
+content.
+
 The CLI now exposes that foundation through two explicit product modes. Direct
 Chat sends a turn to one user-selected provider. Super AI deterministically
 selects a one-, two-, or three-provider workflow from the request, uses
@@ -163,6 +169,7 @@ validated JSON handoffs where needed, and persists one final answer.
 app/main.py -> ApplicationMode
     |-- Direct Chat -> RAGConversationManager -> selected provider client
     `-- Super AI -> RAGConversationManager -> RoutedSuperAIClient
+                                            |-- progress events / cancel token
                                             `-- CapabilityRouter
                                                 |-- FAST -> OpenAI synthesis
                                                 |-- CONTEXT -> Gemini -> OpenAI
@@ -352,6 +359,18 @@ never retried. A retry occurs before an `AgentState` event or tool execution is
 recorded, so the same tool is not executed twice by this policy. Streaming is
 not retried because a partial response cannot be replayed safely. Successful
 model-turn traces expose only the numeric request-attempt count.
+
+The CLI prints route and stage progress for Super AI without showing internal
+handoff content. A host application may call `RoutedSuperAIClient.cancel()`
+from another thread or request handler; it returns `True` only when it changes
+an active run to cancelled. The current provider or tool call is not forcibly
+interrupted. After it returns, no retry, later tool, or handoff stage begins,
+the returned partial model output is discarded, and the incomplete
+conversation turn is rolled back. External side effects from a tool that had
+already started cannot be undone by the conversation rollback. Cancellation
+tokens are per-run, progress remains local and in memory, and the routed client
+rejects concurrent runs. Progress events contain only sequence, route, stage
+ID, status, and stage counts.
 
 `CapabilityRouter` is local and deterministic; it does not make a routing model
 request. Short ordinary prompts select FAST. Source, evidence, document, or RAG
@@ -754,7 +773,9 @@ Selective answer verification is intentionally outside the current plan. Once
 provider credentials are available, the next gated step is the existing opt-in
 smoke suite followed by a small paid end-to-end benchmark of answer quality,
 token cost, latency, and observed retries. Its measurements should guide any
-automatic fallback policy. Progress/cancellation, an API layer, multi-user
-storage, security hardening, and deployment remain later production work.
+automatic fallback policy. An API layer, multi-user storage, security
+hardening, and deployment remain later production work.
+The next useful keyless production step is an API layer that can expose chat,
+progress, cancellation, and readiness through stable request contracts.
 Parallel ready stages, Super AI streaming, exporters, and persistent
 observability storage remain optional.

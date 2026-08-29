@@ -14,6 +14,8 @@ from ai_sdk.agents import (
     MultiAgentCoordinator,
     SequentialHandoffCoordinator,
     SuperAIRoute,
+    WorkflowCancelledError,
+    WorkflowProgressStatus,
 )
 from ai_sdk.application.conversation_manager import ConversationManager
 from ai_sdk.context.prompt_builder import PromptBuilder
@@ -195,3 +197,60 @@ def test_routed_super_ai_selects_workflow_and_persists_turns(
         "Nega bu yechim ishlaydi?",
         "reasoning",
     ]
+
+
+def test_cancelled_super_ai_turn_is_rolled_back(tmp_path):
+    providers = {
+        route: StageClient(route.value)
+        for route in SuperAIRoute
+    }
+    workflows = {}
+    for route, provider in providers.items():
+        route_worker = stage_worker(
+            f"{route.value}_worker",
+            provider,
+            "openai",
+        )
+        workflows[route] = SuperAIClient(
+            SequentialHandoffCoordinator(
+                MultiAgentCoordinator([route_worker]),
+                [HandoffStage(
+                    "final",
+                    route_worker.name,
+                    "Answer",
+                )],
+            )
+        )
+
+    active = {}
+
+    def cancel_after_route(event):
+        if event.status is WorkflowProgressStatus.ROUTE_SELECTED:
+            assert active["client"].cancel() is True
+
+    client = RoutedSuperAIClient(
+        CapabilityRouter(),
+        workflows,
+        progress_handler=cancel_after_route,
+    )
+    active["client"] = client
+    repository = JsonConversationRepository(
+        tmp_path / "cancelled_super_ai_chat.json"
+    )
+    conversation = Conversation()
+    manager = ConversationManager(
+        conversation=conversation,
+        prompt_builder=PromptBuilder(conversation),
+        client=client,
+        repository=repository,
+    )
+
+    with pytest.raises(WorkflowCancelledError):
+        manager.send_message("Salom")
+
+    assert conversation.is_empty() is True
+    assert repository.load().is_empty() is True
+    assert all(provider.prompts == [] for provider in providers.values())
+    assert client.last_progress_event.status is (
+        WorkflowProgressStatus.WORKFLOW_CANCELLED
+    )

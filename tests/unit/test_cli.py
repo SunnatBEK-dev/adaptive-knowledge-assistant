@@ -7,6 +7,7 @@ from app.main import (
     build_manager,
     build_super_ai_manager,
     load_document,
+    print_super_ai_progress,
     print_super_ai_stats,
     run_cli,
     select_application_mode,
@@ -21,6 +22,8 @@ from ai_sdk.agents import (
     DependencyHandoffCoordinator,
     HandoffOutputFormat,
     SuperAIRoute,
+    WorkflowProgressEvent,
+    WorkflowProgressStatus,
 )
 from ai_sdk.application import ApplicationMode
 from ai_sdk.llm.base import BaseToolLLMClient
@@ -138,6 +141,36 @@ def test_cli_explains_stats_availability(capsys):
     print_super_ai_stats(manager)
 
     assert "available in Super AI mode" in capsys.readouterr().out
+
+
+def test_cli_prints_safe_super_ai_progress(capsys):
+    print_super_ai_progress(WorkflowProgressEvent(
+        1,
+        WorkflowProgressStatus.ROUTE_SELECTED,
+        "reasoning",
+        0,
+        2,
+    ))
+    print_super_ai_progress(WorkflowProgressEvent(
+        2,
+        WorkflowProgressStatus.STAGE_STARTED,
+        "reasoning",
+        0,
+        2,
+        "reasoning",
+    ))
+    print_super_ai_progress(WorkflowProgressEvent(
+        3,
+        WorkflowProgressStatus.WORKFLOW_COMPLETED,
+        "reasoning",
+        2,
+        2,
+    ))
+
+    output = capsys.readouterr().out
+    assert "REASONING (2 stages)" in output
+    assert "reasoning: started" in output
+    assert "workflow: completed" in output
 
 
 def test_manager_builder_rejects_provider_and_explicit_client():
