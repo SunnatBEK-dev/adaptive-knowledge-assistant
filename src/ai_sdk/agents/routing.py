@@ -47,6 +47,13 @@ _ROUTE_CAPABILITIES = {
     ),
 }
 
+_ROUTE_MODEL_REQUESTS = {
+    SuperAIRoute.FAST: 1,
+    SuperAIRoute.CONTEXT: 2,
+    SuperAIRoute.REASONING: 2,
+    SuperAIRoute.FULL: 3,
+}
+
 
 @dataclass(frozen=True, init=False)
 class RoutingDecision:
@@ -82,6 +89,10 @@ class RoutingDecision:
             "signals",
             normalized_signals,
         )
+
+    @property
+    def estimated_model_requests(self) -> int:
+        return _ROUTE_MODEL_REQUESTS[self.route]
 
 
 class CapabilityRouter:
@@ -154,7 +165,7 @@ class CapabilityRouter:
         "yechim",
     })
     _REASONING_PREFIXES = (
-        "rejal",
+        "reja",
         "tahlil",
         "taqqos",
         "yech",

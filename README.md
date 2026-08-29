@@ -39,6 +39,8 @@ The application architecture foundation is complete through evaluation phase
 - failed-branch pruning with independent-stage continuation;
 - explainable deterministic capability routing without a model call;
 - one-, two-, and three-provider Super AI workflow variants;
+- bilingual 24-case offline route-selection benchmark;
+- route accuracy, request-count, savings, and local-latency reports;
 - a composite Super AI client that returns one final response;
 - stateless MCP `2026-07-28` request metadata;
 - provider-neutral MCP client and transport contracts;
@@ -134,6 +136,8 @@ Phase 9.2 adds a small offline evaluation harness beside the specialized
 retrieval metrics. It runs an application target once per explicit case,
 applies one or more deterministic evaluators, isolates case failures, and
 produces an aggregate quality report without retaining generated outputs.
+The specialized route suite evaluates Super AI routing without calling a
+provider or retaining benchmark prompts in its results.
 
 The CLI now exposes that foundation through two explicit product modes. Direct
 Chat sends a turn to one user-selected provider. Super AI deterministically
@@ -197,6 +201,9 @@ Tracer -> TraceCollector -> InMemoryTraceCollector
 
 EvaluationRunner -> EvalCase -> application target
     `-- Evaluator -> EvalScore -> EvalCaseResult -> EvaluationReport
+
+RouteEvaluationRunner -> RouteEvalCase -> CapabilityRouter
+    `-- RouteEvalResult -> accuracy + estimated requests + local latency
 ```
 
 The domain layer does not know about JSON, filesystem paths, Anthropic,
@@ -619,8 +626,25 @@ Custom evaluators implement `name`, `threshold`, and
 `evaluate(case, actual_output)`. `ExactMatchEvaluator` is the only built-in
 general text evaluator in this phase; retrieval keeps its purpose-built Hit
 Rate, Recall, and MRR evaluators. LLM judges, dataset persistence, a dedicated
-eval CLI, cost/latency summaries, and regression gates are intentionally left
-for later phases.
+general eval CLI, provider cost/latency summaries, and general regression gates
+are intentionally left for later phases.
+
+The route-specific evaluation suite is fully offline and can be run directly:
+
+```bash
+.venv/bin/python app/evaluate_routing.py
+```
+
+Its built-in balanced benchmark contains 24 English and Uzbek cases across
+FAST, CONTEXT, REASONING, and FULL. The report includes overall and per-route
+accuracy, expected and selected model-request counts, the difference from an
+always-FULL baseline, and local routing latency. At the current rules, the
+benchmark selects all 24 expected routes, estimates 48 model requests instead
+of the 72-request FULL baseline, and therefore estimates 24 saved requests.
+These counts are workflow estimates and the latency measures only local routing;
+no provider is called, so the suite does not claim answer quality, token cost,
+or end-to-end provider latency. Results retain case IDs, routes, safe signals,
+counts, timings, and exception types—not input text or exception messages.
 
 The default ingestion layer supports UTF-8 `.txt`, `.md`, `.markdown`, and
 `.rst` files. Directory synchronization scans recursively in deterministic
@@ -685,8 +709,9 @@ RUN_GEMINI_INTEGRATION=1 \
 
 ## Next chapter
 
-The next core step is a route-evaluation suite that measures selection quality,
-request count, and latency before changing routing thresholds. Automatic
-fallback should only be added with clear retry, quality, and cost rules.
-Parallel ready stages, Super AI streaming, a selective verification stage,
+The next useful step is an opt-in selective verification policy for only FULL
+or explicitly high-risk requests; applying a verifier to every answer would
+erase much of the router's request savings. Before automatic fallback, retries,
+or threshold tuning, paid opt-in tests should measure answer quality, token
+cost, and end-to-end latency. Parallel ready stages, Super AI streaming,
 exporters, and persistent observability storage remain optional later work.

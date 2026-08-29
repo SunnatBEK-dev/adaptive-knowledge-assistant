@@ -16,9 +16,17 @@ from ai_sdk.evaluation.retrieval import (
     RetrievalEvalResult,
     RetrievalEvaluator,
 )
+from ai_sdk.evaluation.routing import (
+    DEFAULT_ROUTE_EVAL_CASES,
+    RouteEvalCase,
+    RouteEvalResult,
+    RouteEvaluationReport,
+    RouteEvaluationRunner,
+)
 
 
 __all__ = [
+    "DEFAULT_ROUTE_EVAL_CASES",
     "EvalCase",
     "EvalCaseResult",
     "EvalScore",
@@ -33,4 +41,8 @@ __all__ = [
     "RetrievalEvalReport",
     "RetrievalEvalResult",
     "RetrievalEvaluator",
+    "RouteEvalCase",
+    "RouteEvalResult",
+    "RouteEvaluationReport",
+    "RouteEvaluationRunner",
 ]
