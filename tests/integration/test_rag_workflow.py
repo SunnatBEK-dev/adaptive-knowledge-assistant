@@ -8,8 +8,8 @@ from ai_sdk.core.conversation import Conversation
 from ai_sdk.embeddings.base import BaseEmbeddingClient
 from ai_sdk.observability import (
     InMemoryTraceCollector,
-    TraceStatus,
     Tracer,
+    TraceStatus,
 )
 from ai_sdk.retrieval.chunker import TextChunker
 from ai_sdk.retrieval.document import Document
@@ -19,8 +19,7 @@ from ai_sdk.retrieval.in_memory import (
 from ai_sdk.retrieval.retriever import (
     SemanticRetriever,
 )
-from ai_sdk.storage.json import JsonConversationRepository
-
+from ai_sdk.storage.json import JSONConversationRepository
 
 pytestmark = pytest.mark.integration
 
@@ -53,9 +52,7 @@ class RecordingLLMClient:
 
 
 def test_full_offline_rag_workflow(tmp_path):
-    repository = JsonConversationRepository(
-        tmp_path / "chat.json"
-    )
+    repository = JSONConversationRepository(tmp_path / "chat.json")
     conversation = Conversation()
     client = RecordingLLMClient()
     collector = InMemoryTraceCollector()
@@ -84,29 +81,18 @@ def test_full_offline_rag_workflow(tmp_path):
     )
 
     chunks = manager.index_document(document)
-    response_chunks = list(manager.stream_message(
-        "How do Python functions work?"
-    ))
+    response_chunks = list(manager.stream_message("How do Python functions work?"))
     restored = repository.load()
 
     assert len(chunks) == 2
     assert response_chunks == ["Grounded ", "answer"]
-    assert "Python functions" in (
-        client.received_messages[-1]["content"]
-    )
-    assert [
-        message.content
-        for message in restored.history()
-    ] == [
+    assert "Python functions" in (client.received_messages[-1]["content"])
+    assert [message.content for message in restored.history()] == [
         "How do Python functions work?",
         "Grounded answer",
     ]
     records = collector.records()
-    root = next(
-        record
-        for record in records
-        if record.name == "conversation.stream"
-    )
+    root = next(record for record in records if record.name == "conversation.stream")
     assert {
         "retrieval.search",
         "llm.stream",

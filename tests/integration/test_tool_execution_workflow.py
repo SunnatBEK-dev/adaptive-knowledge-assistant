@@ -11,7 +11,6 @@ from ai_sdk.tools import (
     ToolSchema,
 )
 
-
 pytestmark = pytest.mark.integration
 
 
@@ -48,28 +47,24 @@ def test_schema_to_validated_tool_result_workflow():
         subtotal = quantity * price
         return {
             "currency": "USD",
-            "total": (
-                subtotal * 1.1
-                if include_tax
-                else subtotal
-            ),
+            "total": (subtotal * 1.1 if include_tax else subtotal),
         }
 
     registry.register(schema, calculate_total)
     executor = ToolExecutor(registry)
-    result = executor.execute(ToolCall(
-        id="call_total",
-        name="calculate_total",
-        arguments={
-            "quantity": 3,
-            "price": 4.0,
-            "include_tax": True,
-        },
-    ))
-
-    assert registry.provider_schemas()[0]["name"] == (
-        "calculate_total"
+    result = executor.execute(
+        ToolCall(
+            id="call_total",
+            name="calculate_total",
+            arguments={
+                "quantity": 3,
+                "price": 4.0,
+                "include_tax": True,
+            },
+        )
     )
+
+    assert registry.provider_schemas()[0]["name"] == ("calculate_total")
     assert result.call_id == "call_total"
     assert result.name == "calculate_total"
     assert result.is_error is False

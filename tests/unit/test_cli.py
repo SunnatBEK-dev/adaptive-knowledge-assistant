@@ -2,18 +2,7 @@ from hashlib import sha256
 
 import pytest
 
-from app.main import (
-    build_direct_chat_manager,
-    build_manager,
-    build_super_ai_manager,
-    load_document,
-    print_super_ai_progress,
-    print_super_ai_stats,
-    run_cli,
-    select_application_mode,
-    select_direct_provider,
-)
-import app.main as main_module
+import ai_sdk.application.bootstrap as bootstrap_module
 from ai_sdk.agents import (
     AgentModelResponse,
     AgentRunner,
@@ -21,17 +10,30 @@ from ai_sdk.agents import (
     AgentWorker,
     DependencyHandoffCoordinator,
     HandoffOutputFormat,
-    SuperAIRoute,
+    MultiModelRoute,
     WorkflowProgressEvent,
     WorkflowProgressStatus,
 )
-from ai_sdk.application import ApplicationMode
-from ai_sdk.llm.base import BaseToolLLMClient
-from ai_sdk.llm.super_ai import (
-    RoutedSuperAIClient,
-    SuperAIClient,
+from ai_sdk.application import AssistantMode
+from ai_sdk.application.bootstrap import (
+    create_adaptive_multi_model_manager,
+    create_rag_manager,
+    create_single_model_manager,
 )
+from ai_sdk.llm.adaptive_multi_model import (
+    AdaptiveMultiModelClient,
+    MultiModelWorkflowClient,
+)
+from ai_sdk.llm.base import BaseToolLLMClient
 from ai_sdk.tools import ToolExecutor, ToolRegistry
+from app.cli import (
+    load_document,
+    print_adaptive_metrics,
+    print_adaptive_progress,
+    run_cli,
+    select_assistant_mode,
+    select_single_model_provider,
+)
 
 
 def test_load_document_uses_stable_path_identity(tmp_path):
@@ -55,9 +57,7 @@ def test_load_document_uses_stable_path_identity(tmp_path):
     assert second.metadata == {
         "source": str(file_path.resolve()),
         "format": "txt",
-        "content_hash": sha256(
-            b"Updated Python functions"
-        ).hexdigest(),
+        "content_hash": sha256(b"Updated Python functions").hexdigest(),
     }
 
 
@@ -77,9 +77,9 @@ def test_load_document_rejects_non_utf8_file(tmp_path):
 def test_cli_selects_application_mode_after_invalid_choice(capsys):
     choices = iter(["unknown", "2"])
 
-    mode = select_application_mode(lambda _: next(choices))
+    mode = select_assistant_mode(lambda _: next(choices))
 
-    assert mode is ApplicationMode.SUPER_AI
+    assert mode is AssistantMode.ADAPTIVE_MULTI_MODEL
     assert "Invalid mode" in capsys.readouterr().out
 
 
@@ -94,14 +94,14 @@ def test_cli_selects_application_mode_after_invalid_choice(capsys):
         ("Gemini", "gemini"),
     ],
 )
-def test_cli_selects_direct_chat_provider(selection, provider):
-    assert select_direct_provider(lambda _: selection) == provider
+def test_cli_selects_single_model_provider(selection, provider):
+    assert select_single_model_provider(lambda _: selection) == provider
 
 
 def test_cli_reprompts_for_invalid_provider(capsys):
     choices = iter(["other", "openai"])
 
-    provider = select_direct_provider(lambda _: next(choices))
+    provider = select_single_model_provider(lambda _: next(choices))
 
     assert provider == "openai"
     assert "Invalid provider" in capsys.readouterr().out
@@ -117,7 +117,7 @@ class NonStreamingManager:
         return "Combined answer"
 
 
-def test_cli_can_run_non_streaming_super_ai_mode(capsys):
+def test_cli_can_run_non_streaming_adaptive_mode(capsys):
     manager = NonStreamingManager()
     commands = iter(["Question", "/exit"])
 
@@ -125,47 +125,53 @@ def test_cli_can_run_non_streaming_super_ai_mode(capsys):
         manager,
         input_fn=lambda _: next(commands),
         ingestor=object(),
-        title="Super AI",
+        title="Adaptive Multi-Model",
         stream_responses=False,
     )
 
     output = capsys.readouterr().out
-    assert "Super AI" in output
+    assert "Adaptive Multi-Model" in output
     assert "Assistant: Combined answer" in output
     assert manager.prompts == ["Question"]
 
 
-def test_cli_explains_stats_availability(capsys):
+def test_cli_explains_metrics_availability(capsys):
     manager = NonStreamingManager()
 
-    print_super_ai_stats(manager)
+    print_adaptive_metrics(manager)
 
-    assert "available in Super AI mode" in capsys.readouterr().out
+    assert "available in Adaptive Multi-Model mode" in capsys.readouterr().out
 
 
-def test_cli_prints_safe_super_ai_progress(capsys):
-    print_super_ai_progress(WorkflowProgressEvent(
-        1,
-        WorkflowProgressStatus.ROUTE_SELECTED,
-        "reasoning",
-        0,
-        2,
-    ))
-    print_super_ai_progress(WorkflowProgressEvent(
-        2,
-        WorkflowProgressStatus.STAGE_STARTED,
-        "reasoning",
-        0,
-        2,
-        "reasoning",
-    ))
-    print_super_ai_progress(WorkflowProgressEvent(
-        3,
-        WorkflowProgressStatus.WORKFLOW_COMPLETED,
-        "reasoning",
-        2,
-        2,
-    ))
+def test_cli_prints_safe_adaptive_progress(capsys):
+    print_adaptive_progress(
+        WorkflowProgressEvent(
+            1,
+            WorkflowProgressStatus.ROUTE_SELECTED,
+            "reasoning",
+            0,
+            2,
+        )
+    )
+    print_adaptive_progress(
+        WorkflowProgressEvent(
+            2,
+            WorkflowProgressStatus.STAGE_STARTED,
+            "reasoning",
+            0,
+            2,
+            "reasoning",
+        )
+    )
+    print_adaptive_progress(
+        WorkflowProgressEvent(
+            3,
+            WorkflowProgressStatus.WORKFLOW_COMPLETED,
+            "reasoning",
+            2,
+            2,
+        )
+    )
 
     output = capsys.readouterr().out
     assert "REASONING (2 stages)" in output
@@ -175,39 +181,40 @@ def test_cli_prints_safe_super_ai_progress(capsys):
 
 def test_manager_builder_rejects_provider_and_explicit_client():
     with pytest.raises(ValueError, match="either"):
-        build_manager(provider="openai", client=object())
+        create_rag_manager(provider="openai", client=object())
 
     with pytest.raises(TypeError, match="BaseLLMClient"):
-        build_manager(client=object())
+        create_rag_manager(client=object())
 
 
-def test_direct_chat_builder_uses_normalized_provider_history(
+def test_single_model_builder_uses_normalized_provider_history(
     monkeypatch,
     tmp_path,
 ):
     received = {}
     expected = object()
 
-    def fake_build_manager(**kwargs):
+    def fake_create_rag_manager(**kwargs):
         received.update(kwargs)
         return expected
 
     monkeypatch.setattr(
-        main_module,
-        "build_manager",
-        fake_build_manager,
+        bootstrap_module,
+        "create_rag_manager",
+        fake_create_rag_manager,
     )
-    chat_file = tmp_path / "openai.json"
+    conversation_path = tmp_path / "openai.json"
 
-    result = build_direct_chat_manager(
+    result = create_single_model_manager(
         " OpenAI ",
-        conversation_file=chat_file,
+        conversation_file=conversation_path,
     )
 
     assert result is expected
     assert received == {
         "provider": "openai",
-        "conversation_file": chat_file,
+        "conversation_file": conversation_path,
+        "runtime": None,
     }
 
 
@@ -222,7 +229,7 @@ class WorkerClient(BaseToolLLMClient):
         return AgentModelResponse([AgentTextBlock("done")])
 
 
-def test_super_ai_builder_configures_three_provider_stages(
+def test_adaptive_builder_configures_three_provider_stages(
     monkeypatch,
     tmp_path,
 ):
@@ -251,61 +258,53 @@ def test_super_ai_builder_configures_three_provider_stages(
             provider=provider,
         )
 
-    def fake_build_manager(**kwargs):
+    def fake_create_rag_manager(**kwargs):
         received.update(kwargs)
         return expected
 
     monkeypatch.setattr(
-        main_module,
+        bootstrap_module,
         "create_provider_worker",
         fake_worker,
     )
     monkeypatch.setattr(
-        main_module,
-        "build_manager",
-        fake_build_manager,
+        bootstrap_module,
+        "create_rag_manager",
+        fake_create_rag_manager,
     )
-    chat_file = tmp_path / "super.json"
+    conversation_path = tmp_path / "adaptive.json"
 
-    result = build_super_ai_manager(
-        conversation_file=chat_file
-    )
+    result = create_adaptive_multi_model_manager(conversation_file=conversation_path)
 
     assert result is expected
     assert providers == ["gemini", "anthropic", "openai"]
     assert len({id(policy) for policy in retry_policies}) == 1
     assert retry_policies[0].max_attempts == 3
-    assert received["conversation_file"] == chat_file
-    routed = received["client"]
-    assert isinstance(routed, RoutedSuperAIClient)
-    assert set(routed.workflows) == set(SuperAIRoute)
+    assert received["conversation_file"] == conversation_path
+    adaptive_client = received["client"]
+    assert isinstance(adaptive_client, AdaptiveMultiModelClient)
+    assert set(adaptive_client.workflows) == set(MultiModelRoute)
     assert {
         route: len(client.workflow.stages)
-        for route, client in routed.workflows.items()
+        for route, client in adaptive_client.workflows.items()
     } == {
-        SuperAIRoute.FAST: 1,
-        SuperAIRoute.CONTEXT: 2,
-        SuperAIRoute.REASONING: 2,
-        SuperAIRoute.FULL: 3,
+        MultiModelRoute.FAST: 1,
+        MultiModelRoute.CONTEXT: 2,
+        MultiModelRoute.REASONING: 2,
+        MultiModelRoute.FULL: 3,
     }
-    full = routed.workflows[SuperAIRoute.FULL]
-    assert isinstance(full, SuperAIClient)
+    full = adaptive_client.workflows[MultiModelRoute.FULL]
+    assert isinstance(full, MultiModelWorkflowClient)
     assert isinstance(
         full.workflow,
         DependencyHandoffCoordinator,
     )
-    assert [
-        stage.output_format
-        for stage in full.workflow.stages
-    ] == [
+    assert [stage.output_format for stage in full.workflow.stages] == [
         HandoffOutputFormat.STRUCTURED,
         HandoffOutputFormat.STRUCTURED,
         HandoffOutputFormat.TEXT,
     ]
-    assert [
-        stage.depends_on
-        for stage in full.workflow.stages
-    ] == [
+    assert [stage.depends_on for stage in full.workflow.stages] == [
         (),
         ("context",),
         ("context", "reasoning"),

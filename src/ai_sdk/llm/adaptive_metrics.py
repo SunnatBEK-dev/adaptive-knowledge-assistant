@@ -11,22 +11,21 @@ from ai_sdk.agents.handoff import (
     DependencyHandoffResult,
     HandoffResult,
 )
-from ai_sdk.agents.routing import RoutingSignal, SuperAIRoute
-
+from ai_sdk.agents.routing import MultiModelRoute, RoutingSignal
 
 _IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")
 _ERROR_TYPE_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]{0,127}$")
 
 
-class SuperAIStatsValidationError(ValueError):
-    """Raised when a Super AI runtime metric is invalid."""
+class AdaptiveMetricsValidationError(ValueError):
+    """Raised when an Adaptive Multi-Model runtime metric is invalid."""
 
 
 @dataclass(frozen=True, init=False)
-class SuperAIRunMetric:
-    """Content-free facts about one routed Super AI workflow run."""
+class AdaptiveRunMetric:
+    """Content-free facts about one Adaptive Multi-Model workflow run."""
 
-    route: SuperAIRoute
+    route: MultiModelRoute
     signals: tuple[RoutingSignal, ...]
     expected_stage_count: int
     executed_stage_ids: tuple[str, ...]
@@ -38,7 +37,7 @@ class SuperAIRunMetric:
 
     def __init__(
         self,
-        route: SuperAIRoute,
+        route: MultiModelRoute,
         signals: Sequence[RoutingSignal],
         expected_stage_count: int,
         executed_stage_ids: Sequence[str],
@@ -48,28 +47,25 @@ class SuperAIRunMetric:
         completed: bool,
         error_type: str | None = None,
     ) -> None:
-        if not isinstance(route, SuperAIRoute):
-            raise SuperAIStatsValidationError(
-                "Super AI metric route is invalid."
+        if not isinstance(route, MultiModelRoute):
+            raise AdaptiveMetricsValidationError(
+                "Adaptive Multi-Model metric route is invalid."
             )
         normalized_signals = tuple(signals)
-        if any(
-            not isinstance(signal, RoutingSignal)
-            for signal in normalized_signals
-        ):
-            raise SuperAIStatsValidationError(
-                "Super AI metric signals are invalid."
+        if any(not isinstance(signal, RoutingSignal) for signal in normalized_signals):
+            raise AdaptiveMetricsValidationError(
+                "Adaptive Multi-Model metric signals are invalid."
             )
         if len(normalized_signals) != len(set(normalized_signals)):
-            raise SuperAIStatsValidationError(
-                "Super AI metric signals must be unique."
+            raise AdaptiveMetricsValidationError(
+                "Adaptive Multi-Model metric signals must be unique."
             )
         if (
             not isinstance(expected_stage_count, int)
             or isinstance(expected_stage_count, bool)
             or expected_stage_count <= 0
         ):
-            raise SuperAIStatsValidationError(
+            raise AdaptiveMetricsValidationError(
                 "Expected stage count must be positive."
             )
         executed = self._stage_ids(
@@ -79,15 +75,15 @@ class SuperAIRunMetric:
         failed = self._stage_ids(failed_stage_ids, "failed")
         blocked = self._stage_ids(blocked_stage_ids, "blocked")
         if not set(failed).issubset(executed):
-            raise SuperAIStatsValidationError(
+            raise AdaptiveMetricsValidationError(
                 "Failed stages must be executed stages."
             )
         if set(executed).intersection(blocked):
-            raise SuperAIStatsValidationError(
+            raise AdaptiveMetricsValidationError(
                 "Executed and blocked stages cannot overlap."
             )
         if len(executed) + len(blocked) > expected_stage_count:
-            raise SuperAIStatsValidationError(
+            raise AdaptiveMetricsValidationError(
                 "Stage totals exceed the expected stage count."
             )
         if (
@@ -95,19 +91,19 @@ class SuperAIRunMetric:
             or isinstance(duration_ns, bool)
             or duration_ns < 0
         ):
-            raise SuperAIStatsValidationError(
-                "Super AI duration must be non-negative."
+            raise AdaptiveMetricsValidationError(
+                "Adaptive Multi-Model duration must be non-negative."
             )
         if not isinstance(completed, bool):
-            raise SuperAIStatsValidationError(
-                "Super AI completion flag is invalid."
+            raise AdaptiveMetricsValidationError(
+                "Adaptive Multi-Model completion flag is invalid."
             )
         if error_type is not None and (
             not isinstance(error_type, str)
             or _ERROR_TYPE_PATTERN.fullmatch(error_type) is None
         ):
-            raise SuperAIStatsValidationError(
-                "Super AI error type is invalid."
+            raise AdaptiveMetricsValidationError(
+                "Adaptive Multi-Model error type is invalid."
             )
         if completed and (
             len(executed) != expected_stage_count
@@ -115,8 +111,8 @@ class SuperAIRunMetric:
             or blocked
             or error_type is not None
         ):
-            raise SuperAIStatsValidationError(
-                "Completed Super AI metric is inconsistent."
+            raise AdaptiveMetricsValidationError(
+                "Completed Adaptive Multi-Model metric is inconsistent."
             )
 
         object.__setattr__(self, "route", route)
@@ -137,13 +133,13 @@ class SuperAIRunMetric:
     def from_result(
         cls,
         *,
-        route: SuperAIRoute,
+        route: MultiModelRoute,
         signals: Sequence[RoutingSignal],
         expected_stage_count: int,
         result: HandoffResult | None,
         duration_ns: int,
         error_type: str | None,
-    ) -> SuperAIRunMetric:
+    ) -> AdaptiveRunMetric:
         stages = () if result is None else result.stages
         executed = tuple(stage.stage.id for stage in stages)
         failed = tuple(
@@ -164,11 +160,7 @@ class SuperAIRunMetric:
             failed_stage_ids=failed,
             blocked_stage_ids=blocked,
             duration_ns=duration_ns,
-            completed=(
-                result is not None
-                and result.completed
-                and error_type is None
-            ),
+            completed=(result is not None and result.completed and error_type is None),
             error_type=error_type,
         )
 
@@ -178,21 +170,20 @@ class SuperAIRunMetric:
         label: str,
     ) -> tuple[str, ...]:
         if isinstance(values, (str, bytes)):
-            raise SuperAIStatsValidationError(
-                f"Super AI {label} stage IDs must be a sequence."
+            raise AdaptiveMetricsValidationError(
+                f"Adaptive Multi-Model {label} stage IDs must be a sequence."
             )
         normalized = tuple(values)
         if any(
-            not isinstance(value, str)
-            or _IDENTIFIER_PATTERN.fullmatch(value) is None
+            not isinstance(value, str) or _IDENTIFIER_PATTERN.fullmatch(value) is None
             for value in normalized
         ):
-            raise SuperAIStatsValidationError(
-                f"Super AI {label} stage ID is invalid."
+            raise AdaptiveMetricsValidationError(
+                f"Adaptive Multi-Model {label} stage ID is invalid."
             )
         if len(normalized) != len(set(normalized)):
-            raise SuperAIStatsValidationError(
-                f"Super AI {label} stage IDs must be unique."
+            raise AdaptiveMetricsValidationError(
+                f"Adaptive Multi-Model {label} stage IDs must be unique."
             )
         return normalized
 
@@ -214,7 +205,7 @@ class SuperAIRunMetric:
 
 
 @dataclass(frozen=True)
-class SuperAIStatsReport:
+class AdaptiveMetricsReport:
     total_runs: int
     successful_runs: int
     failed_runs: int
@@ -241,20 +232,14 @@ class SuperAIStatsReport:
             "mean_duration_ms": self.mean_duration_ms,
             "max_duration_ms": self.max_duration_ms,
             "route_counts": dict(self.route_counts),
-            "stage_execution_counts": dict(
-                self.stage_execution_counts
-            ),
-            "stage_failure_counts": dict(
-                self.stage_failure_counts
-            ),
-            "stage_blocked_counts": dict(
-                self.stage_blocked_counts
-            ),
+            "stage_execution_counts": dict(self.stage_execution_counts),
+            "stage_failure_counts": dict(self.stage_failure_counts),
+            "stage_blocked_counts": dict(self.stage_blocked_counts),
         }
 
 
-class InMemorySuperAIStats:
-    """Keep bounded, content-free Super AI runtime metrics in memory."""
+class InMemoryAdaptiveMetrics:
+    """Keep bounded, content-free Adaptive Multi-Model runtime metrics in memory."""
 
     def __init__(self, max_records: int = 1_000) -> None:
         if (
@@ -262,17 +247,17 @@ class InMemorySuperAIStats:
             or isinstance(max_records, bool)
             or max_records <= 0
         ):
-            raise SuperAIStatsValidationError(
-                "Super AI metric limit must be positive."
+            raise AdaptiveMetricsValidationError(
+                "Adaptive Multi-Model metric limit must be positive."
             )
         self.max_records = max_records
-        self._records: list[SuperAIRunMetric] = []
+        self._records: list[AdaptiveRunMetric] = []
         self._lock = Lock()
 
-    def record(self, metric: SuperAIRunMetric) -> None:
-        if not isinstance(metric, SuperAIRunMetric):
-            raise SuperAIStatsValidationError(
-                "Super AI runtime metric is invalid."
+    def record(self, metric: AdaptiveRunMetric) -> None:
+        if not isinstance(metric, AdaptiveRunMetric):
+            raise AdaptiveMetricsValidationError(
+                "Adaptive Multi-Model runtime metric is invalid."
             )
         with self._lock:
             self._records.append(metric)
@@ -280,7 +265,7 @@ class InMemorySuperAIStats:
             if overflow > 0:
                 del self._records[:overflow]
 
-    def records(self) -> tuple[SuperAIRunMetric, ...]:
+    def records(self) -> tuple[AdaptiveRunMetric, ...]:
         with self._lock:
             return tuple(self._records)
 
@@ -288,7 +273,7 @@ class InMemorySuperAIStats:
         with self._lock:
             self._records.clear()
 
-    def report(self) -> SuperAIStatsReport:
+    def report(self) -> AdaptiveMetricsReport:
         records = self.records()
         route_counts: dict[str, int] = {}
         stage_execution_counts: dict[str, int] = {}
@@ -306,38 +291,20 @@ class InMemorySuperAIStats:
 
         durations = [metric.duration_ms for metric in records]
         successful = sum(metric.completed for metric in records)
-        return SuperAIStatsReport(
+        return AdaptiveMetricsReport(
             total_runs=len(records),
             successful_runs=successful,
             failed_runs=len(records) - successful,
-            expected_stage_count=sum(
-                metric.expected_stage_count for metric in records
-            ),
-            executed_stage_count=sum(
-                metric.executed_stage_count for metric in records
-            ),
-            failed_stage_count=sum(
-                metric.failed_stage_count for metric in records
-            ),
-            blocked_stage_count=sum(
-                metric.blocked_stage_count for metric in records
-            ),
-            mean_duration_ms=(
-                sum(durations) / len(durations)
-                if durations
-                else 0.0
-            ),
+            expected_stage_count=sum(metric.expected_stage_count for metric in records),
+            executed_stage_count=sum(metric.executed_stage_count for metric in records),
+            failed_stage_count=sum(metric.failed_stage_count for metric in records),
+            blocked_stage_count=sum(metric.blocked_stage_count for metric in records),
+            mean_duration_ms=(sum(durations) / len(durations) if durations else 0.0),
             max_duration_ms=max(durations, default=0.0),
             route_counts=MappingProxyType(route_counts),
-            stage_execution_counts=MappingProxyType(
-                stage_execution_counts
-            ),
-            stage_failure_counts=MappingProxyType(
-                stage_failure_counts
-            ),
-            stage_blocked_counts=MappingProxyType(
-                stage_blocked_counts
-            ),
+            stage_execution_counts=MappingProxyType(stage_execution_counts),
+            stage_failure_counts=MappingProxyType(stage_failure_counts),
+            stage_blocked_counts=MappingProxyType(stage_blocked_counts),
         )
 
     @staticmethod

@@ -16,7 +16,6 @@ from ai_sdk.tools.schema import (
     ToolValidationError,
 )
 
-
 __all__ = [
     "RegisteredTool",
     "ToolCall",

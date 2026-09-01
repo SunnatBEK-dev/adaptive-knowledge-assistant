@@ -26,10 +26,12 @@ def test_message_round_trip_preserves_all_fields():
 
 
 def test_from_dict_generates_identity_for_legacy_message():
-    message = Message.from_dict({
-        "role": "user",
-        "content": "Legacy",
-    })
+    message = Message.from_dict(
+        {
+            "role": "user",
+            "content": "Legacy",
+        }
+    )
 
     assert message.id.startswith("msg_")
     assert message.role == "user"

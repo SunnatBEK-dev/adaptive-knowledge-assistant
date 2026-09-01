@@ -1,7 +1,7 @@
 from collections.abc import Iterator
 
-from ai_sdk.core.conversation import Conversation
 from ai_sdk.context.prompt_builder import PromptBuilder
+from ai_sdk.core.conversation import Conversation
 from ai_sdk.llm.base import BaseLLMClient
 from ai_sdk.llm.types import LLMMessage
 from ai_sdk.memory.base import BaseMemoryStore
@@ -19,7 +19,6 @@ from ai_sdk.tools.executor import ToolExecutor
 
 
 class ConversationManager:
-
     def __init__(
         self,
         conversation: Conversation,
@@ -33,26 +32,17 @@ class ConversationManager:
         tracer: Tracer | None = None,
     ) -> None:
         if memory_retrieval_k <= 0:
-            raise ValueError(
-                "Memory retrieval top-k must be greater than zero."
-            )
+            raise ValueError("Memory retrieval top-k must be greater than zero.")
 
         if (
             not isinstance(max_tool_rounds, int)
             or isinstance(max_tool_rounds, bool)
             or max_tool_rounds <= 0
         ):
-            raise ValueError(
-                "Maximum tool rounds must be greater than zero."
-            )
+            raise ValueError("Maximum tool rounds must be greater than zero.")
 
-        if (
-            tool_executor is not None
-            and not isinstance(tool_executor, ToolExecutor)
-        ):
-            raise TypeError(
-                "Tool executor must be a ToolExecutor."
-            )
+        if tool_executor is not None and not isinstance(tool_executor, ToolExecutor):
+            raise TypeError("Tool executor must be a ToolExecutor.")
         if tracer is not None and not isinstance(tracer, Tracer):
             raise TypeError("Conversation tracer must be a Tracer.")
 
@@ -67,11 +57,7 @@ class ConversationManager:
         self.tracer = (
             tracer
             if tracer is not None
-            else (
-                None
-                if tool_executor is None
-                else tool_executor.tracer
-            )
+            else (None if tool_executor is None else tool_executor.tracer)
         )
 
     def _build_messages(
@@ -87,15 +73,10 @@ class ConversationManager:
         normalized_content = content.strip()
 
         if not normalized_content:
-            raise ValueError(
-                "Long-term memory content cannot be empty."
-            )
+            raise ValueError("Long-term memory content cannot be empty.")
 
         for memory in memory_store.list_memories():
-            if (
-                memory.content.casefold()
-                == normalized_content.casefold()
-            ):
+            if memory.content.casefold() == normalized_content.casefold():
                 return memory
 
         memory = LongTermMemory.create(normalized_content)
@@ -122,9 +103,7 @@ class ConversationManager:
 
     def _require_memory_store(self) -> BaseMemoryStore:
         if self.memory_store is None:
-            raise RuntimeError(
-                "Long-term memory is not configured."
-            )
+            raise RuntimeError("Long-term memory is not configured.")
 
         return self.memory_store
 
@@ -151,9 +130,7 @@ class ConversationManager:
                 )
 
                 if not callable(ask_with_tools):
-                    raise RuntimeError(
-                        "Configured LLM client does not support tools."
-                    )
+                    raise RuntimeError("Configured LLM client does not support tools.")
 
                 kwargs: dict[str, object] = {
                     "max_tool_rounds": self.max_tool_rounds,
@@ -181,9 +158,7 @@ class ConversationManager:
             "conversation.send",
             TraceCategory.WORKFLOW,
             {
-                "conversation.message_count": len(
-                    self.conversation.messages
-                ),
+                "conversation.message_count": len(self.conversation.messages),
                 "conversation.input_length": (
                     len(text) if isinstance(text, str) else 0
                 ),
@@ -201,9 +176,7 @@ class ConversationManager:
         self,
         text: str,
     ) -> str:
-        user_message = (
-            self.conversation.add_user(text)
-        )
+        user_message = self.conversation.add_user(text)
         assistant_message = None
 
         try:
@@ -211,27 +184,17 @@ class ConversationManager:
 
             response = self._ask(messages)
 
-            assistant_message = (
-                self.conversation.add_assistant(
-                    response
-                )
-            )
+            assistant_message = self.conversation.add_assistant(response)
 
-            self.repository.save(
-                self.conversation
-            )
+            self.repository.save(self.conversation)
 
             return response
 
         except Exception:
             if assistant_message is not None:
-                self.conversation.delete_message(
-                    assistant_message.id
-                )
+                self.conversation.delete_message(assistant_message.id)
 
-            self.conversation.delete_message(
-                user_message.id
-            )
+            self.conversation.delete_message(user_message.id)
 
             raise
 
@@ -244,9 +207,7 @@ class ConversationManager:
             "conversation.stream",
             TraceCategory.WORKFLOW,
             {
-                "conversation.message_count": len(
-                    self.conversation.messages
-                ),
+                "conversation.message_count": len(self.conversation.messages),
                 "conversation.input_length": (
                     len(text) if isinstance(text, str) else 0
                 ),
@@ -268,13 +229,10 @@ class ConversationManager:
     ) -> Iterator[str]:
         if self.tool_executor is not None:
             raise RuntimeError(
-                "Tool-enabled streaming is not supported. "
-                "Use send_message instead."
+                "Tool-enabled streaming is not supported. Use send_message instead."
             )
 
-        user_message = (
-            self.conversation.add_user(text)
-        )
+        user_message = self.conversation.add_user(text)
 
         chunks = []
         assistant_message = None
@@ -288,9 +246,7 @@ class ConversationManager:
                 TraceCategory.LLM,
                 {"llm.message_count": len(messages)},
             ) as span:
-                for chunk in self.client.stream(
-                    messages
-                ):
+                for chunk in self.client.stream(messages):
                     chunks.append(chunk)
                     yield chunk
                 if span is not None:
@@ -301,24 +257,14 @@ class ConversationManager:
 
             response = "".join(chunks)
 
-            assistant_message = (
-                self.conversation.add_assistant(
-                    response
-                )
-            )
+            assistant_message = self.conversation.add_assistant(response)
 
-            self.repository.save(
-                self.conversation
-            )
+            self.repository.save(self.conversation)
 
         except (Exception, GeneratorExit):
             if assistant_message is not None:
-                self.conversation.delete_message(
-                    assistant_message.id
-                )
+                self.conversation.delete_message(assistant_message.id)
 
-            self.conversation.delete_message(
-                user_message.id
-            )
+            self.conversation.delete_message(user_message.id)
 
             raise

@@ -16,10 +16,12 @@ class RegexTokenCounter:
     """Deterministically approximate tokens without a model dependency."""
 
     def count(self, text: str) -> int:
-        return len(re.findall(
-            r"\w+|[^\w\s]",
-            text,
-        ))
+        return len(
+            re.findall(
+                r"\w+|[^\w\s]",
+                text,
+            )
+        )
 
 
 @dataclass
@@ -40,19 +42,13 @@ class SlidingContextWindow:
         message_overhead: int = 4,
     ) -> None:
         if max_tokens <= 0:
-            raise ValueError(
-                "Context token budget must be greater than zero."
-            )
+            raise ValueError("Context token budget must be greater than zero.")
 
         if message_overhead < 0:
-            raise ValueError(
-                "Message token overhead cannot be negative."
-            )
+            raise ValueError("Message token overhead cannot be negative.")
 
         self.max_tokens = max_tokens
-        self.token_counter = (
-            token_counter or RegexTokenCounter()
-        )
+        self.token_counter = token_counter or RegexTokenCounter()
         self.message_overhead = message_overhead
 
     def select(
@@ -78,27 +74,18 @@ class SlidingContextWindow:
 
         for turn in reversed(turns):
             turn_tokens = sum(
-                self.token_counter.count(
-                    message["content"]
-                )
-                + self.message_overhead
+                self.token_counter.count(message["content"]) + self.message_overhead
                 for message in turn
             )
 
-            if (
-                selected_turns
-                and used_tokens + turn_tokens
-                > self.max_tokens
-            ):
+            if selected_turns and used_tokens + turn_tokens > self.max_tokens:
                 break
 
             selected_turns.append(turn)
             used_tokens += turn_tokens
 
         included_turns = list(reversed(selected_turns))
-        excluded_turns = turns[
-            :len(turns) - len(included_turns)
-        ]
+        excluded_turns = turns[: len(turns) - len(included_turns)]
 
         return ContextWindowSelection(
             included=self._flatten(included_turns),

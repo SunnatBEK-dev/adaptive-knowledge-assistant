@@ -4,12 +4,12 @@ from ai_sdk.mcp.model import (
     MCPDiscoveryResult,
     MCPInputRequiredResult,
     MCPRequestContext,
+    MCPResourcePage,
     MCPResourceReadRequest,
     MCPResourceReadResult,
-    MCPResourcePage,
+    MCPToolPage,
     MCPToolRequest,
     MCPToolResult,
-    MCPToolPage,
 )
 
 

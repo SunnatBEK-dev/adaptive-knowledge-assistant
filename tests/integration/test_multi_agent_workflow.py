@@ -19,7 +19,6 @@ from ai_sdk.tools import (
     ToolSchema,
 )
 
-
 pytestmark = pytest.mark.integration
 
 
@@ -56,23 +55,33 @@ def test_named_provider_workers_produce_isolated_ordered_results(
         lambda topic: {"topic": topic, "fact": "verified"},
     )
     clients = {
-        "gemini": ScriptedWorkerClient([
-            AgentModelResponse([
-                ToolCall(
-                    "call_lookup",
-                    "lookup",
-                    {"topic": "Python"},
+        "gemini": ScriptedWorkerClient(
+            [
+                AgentModelResponse(
+                    [
+                        ToolCall(
+                            "call_lookup",
+                            "lookup",
+                            {"topic": "Python"},
+                        ),
+                    ]
                 ),
-            ]),
-            AgentModelResponse([
-                AgentTextBlock("Research complete"),
-            ]),
-        ]),
-        "openai": ScriptedWorkerClient([
-            AgentModelResponse([
-                AgentTextBlock("Draft complete"),
-            ]),
-        ]),
+                AgentModelResponse(
+                    [
+                        AgentTextBlock("Research complete"),
+                    ]
+                ),
+            ]
+        ),
+        "openai": ScriptedWorkerClient(
+            [
+                AgentModelResponse(
+                    [
+                        AgentTextBlock("Draft complete"),
+                    ]
+                ),
+            ]
+        ),
     }
     created_for = []
 
@@ -96,23 +105,27 @@ def test_named_provider_workers_produce_isolated_ordered_results(
         "Write concise text",
         "openai",
     )
-    coordinator = MultiAgentCoordinator([
-        researcher,
-        writer,
-    ])
+    coordinator = MultiAgentCoordinator(
+        [
+            researcher,
+            writer,
+        ]
+    )
 
-    result = coordinator.run([
-        AgentTask(
-            "task_research",
-            "researcher",
-            "Research Python",
-        ),
-        AgentTask(
-            "task_write",
-            "writer",
-            "Write a short draft",
-        ),
-    ])
+    result = coordinator.run(
+        [
+            AgentTask(
+                "task_research",
+                "researcher",
+                "Research Python",
+            ),
+            AgentTask(
+                "task_write",
+                "writer",
+                "Write a short draft",
+            ),
+        ]
+    )
 
     assert [item.status for item in result.results] == [
         AgentTaskStatus.COMPLETED,
@@ -127,7 +140,4 @@ def test_named_provider_workers_produce_isolated_ordered_results(
     assert created_for == ["gemini", "openai"]
     assert researcher.provider == "gemini"
     assert writer.provider == "openai"
-    assert (
-        result.results[0].state
-        is not result.results[1].state
-    )
+    assert result.results[0].state is not result.results[1].state

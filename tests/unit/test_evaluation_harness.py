@@ -109,9 +109,7 @@ def test_evaluator_failure_preserves_prior_scores_and_continues():
                 raise LookupError("private evaluator detail")
             return 1.0
 
-    report = EvaluationRunner(
-        [ExactMatchEvaluator(), ExplodingEvaluator()]
-    ).evaluate(
+    report = EvaluationRunner([ExactMatchEvaluator(), ExplodingEvaluator()]).evaluate(
         [
             EvalCase("broken", "one", "one"),
             EvalCase("healthy", "two", "two"),

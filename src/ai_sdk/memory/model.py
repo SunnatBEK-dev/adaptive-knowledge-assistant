@@ -11,14 +11,10 @@ class LongTermMemory:
 
     def __post_init__(self) -> None:
         if not self.id.strip():
-            raise ValueError(
-                "Long-term memory ID cannot be empty."
-            )
+            raise ValueError("Long-term memory ID cannot be empty.")
 
         if not self.content.strip():
-            raise ValueError(
-                "Long-term memory content cannot be empty."
-            )
+            raise ValueError("Long-term memory content cannot be empty.")
 
     @classmethod
     def create(cls, content: str) -> "LongTermMemory":

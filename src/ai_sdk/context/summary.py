@@ -26,14 +26,10 @@ class ExtractiveConversationSummarizer:
         token_counter: TokenCounter | None = None,
     ) -> None:
         if max_tokens <= 0:
-            raise ValueError(
-                "Summary token budget must be greater than zero."
-            )
+            raise ValueError("Summary token budget must be greater than zero.")
 
         self.max_tokens = max_tokens
-        self.token_counter = (
-            token_counter or RegexTokenCounter()
-        )
+        self.token_counter = token_counter or RegexTokenCounter()
 
     def summarize(
         self,
@@ -43,21 +39,14 @@ class ExtractiveConversationSummarizer:
         used_tokens = 0
 
         for message in reversed(messages):
-            content = " ".join(
-                message["content"].split()
-            )
+            content = " ".join(message["content"].split())
 
             if not content:
                 continue
 
-            line = (
-                f"{message['role'].capitalize()}: "
-                f"{content}"
-            )
+            line = f"{message['role'].capitalize()}: {content}"
             line_tokens = self.token_counter.count(line)
-            remaining_tokens = (
-                self.max_tokens - used_tokens
-            )
+            remaining_tokens = self.max_tokens - used_tokens
 
             if line_tokens <= remaining_tokens:
                 selected_lines.append(line)

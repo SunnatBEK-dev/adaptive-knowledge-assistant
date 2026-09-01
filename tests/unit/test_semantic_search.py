@@ -39,10 +39,13 @@ def test_cosine_similarity_known_directions(
 
 
 def test_cosine_similarity_treats_zero_vector_as_no_similarity():
-    assert cosine_similarity(
-        [0.0, 0.0],
-        [1.0, 0.0],
-    ) == 0.0
+    assert (
+        cosine_similarity(
+            [0.0, 0.0],
+            [1.0, 0.0],
+        )
+        == 0.0
+    )
 
 
 @pytest.mark.parametrize(
@@ -104,11 +107,14 @@ def test_top_k_search_preserves_input_order_for_equal_scores():
 
 
 def test_top_k_search_returns_empty_for_no_candidates():
-    assert top_k_search(
-        query_vector=[1.0],
-        candidates=[],
-        k=3,
-    ) == []
+    assert (
+        top_k_search(
+            query_vector=[1.0],
+            candidates=[],
+            k=3,
+        )
+        == []
+    )
 
 
 def test_top_k_search_rejects_non_positive_k():
@@ -145,10 +151,13 @@ def test_bm25_search_finds_exact_lexical_terms():
 
 
 def test_bm25_search_returns_empty_when_terms_do_not_match():
-    assert bm25_search(
-        "unrelated",
-        [make_chunk("chunk_one", 0)],
-    ) == []
+    assert (
+        bm25_search(
+            "unrelated",
+            [make_chunk("chunk_one", 0)],
+        )
+        == []
+    )
 
 
 @pytest.mark.parametrize(
@@ -187,10 +196,7 @@ def test_rank_fusion_combines_semantic_and_lexical_evidence():
         exact,
         semantic,
     ]
-    assert all(
-        0.0 < result.score <= 1.0
-        for result in results
-    )
+    assert all(0.0 < result.score <= 1.0 for result in results)
 
 
 @pytest.mark.parametrize(

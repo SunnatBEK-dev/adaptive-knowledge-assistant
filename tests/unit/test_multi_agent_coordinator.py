@@ -43,11 +43,11 @@ class RecordingClient(BaseToolLLMClient):
         self.turns.append((messages, schemas, events))
         if self.error:
             raise self.error
-        return AgentModelResponse([
-            AgentTextBlock(
-                f"{self.prefix} {len(self.turns)}"
-            ),
-        ])
+        return AgentModelResponse(
+            [
+                AgentTextBlock(f"{self.prefix} {len(self.turns)}"),
+            ]
+        )
 
 
 class ScriptedClient(RecordingClient):
@@ -79,10 +79,12 @@ def worker(name="researcher", client=None):
 def test_coordinator_runs_explicit_assignments_in_input_order():
     research_client = RecordingClient("Research")
     writing_client = RecordingClient("Draft")
-    coordinator = MultiAgentCoordinator([
-        worker("researcher", research_client),
-        worker("writer", writing_client),
-    ])
+    coordinator = MultiAgentCoordinator(
+        [
+            worker("researcher", research_client),
+            worker("writer", writing_client),
+        ]
+    )
     tasks = [
         AgentTask("task_write", "writer", "Write summary"),
         AgentTask(
@@ -107,10 +109,7 @@ def test_coordinator_runs_explicit_assignments_in_input_order():
     ]
     assert len(result.completed) == 3
     assert result.failed == ()
-    assert (
-        result.results[0].state
-        is not result.results[2].state
-    )
+    assert result.results[0].state is not result.results[2].state
     assert writing_client.turns[0][2] == ()
     assert writing_client.turns[1][2] == ()
     assignment = writing_client.turns[0][0][0]["content"]
@@ -120,28 +119,28 @@ def test_coordinator_runs_explicit_assignments_in_input_order():
 
 
 def test_coordinator_contains_worker_failure_and_continues():
-    failing = RecordingClient(
-        error=RuntimeError("private provider detail")
-    )
+    failing = RecordingClient(error=RuntimeError("private provider detail"))
     healthy = RecordingClient("Healthy")
-    coordinator = MultiAgentCoordinator([
-        worker("broken", failing),
-        worker("healthy", healthy),
-    ])
+    coordinator = MultiAgentCoordinator(
+        [
+            worker("broken", failing),
+            worker("healthy", healthy),
+        ]
+    )
 
-    result = coordinator.run([
-        AgentTask("task_bad", "broken", "Fail"),
-        AgentTask("task_good", "healthy", "Continue"),
-    ])
+    result = coordinator.run(
+        [
+            AgentTask("task_bad", "broken", "Fail"),
+            AgentTask("task_good", "healthy", "Continue"),
+        ]
+    )
 
     assert [item.status for item in result.results] == [
         AgentTaskStatus.FAILED,
         AgentTaskStatus.COMPLETED,
     ]
     assert result.results[0].state is None
-    assert result.results[0].error == (
-        "Worker execution failed: RuntimeError"
-    )
+    assert result.results[0].error == ("Worker execution failed: RuntimeError")
     assert "private provider detail" not in result.results[0].error
     assert result.results[1].output == "Healthy 1"
 
@@ -162,54 +161,68 @@ def test_coordinator_marks_non_final_agent_stop_as_failed():
         ),
         lambda value: value * 2,
     )
-    client = ScriptedClient([
-        AgentModelResponse([
-            ToolCall("call_1", "double", {"value": 1}),
-        ]),
-        AgentModelResponse([
-            ToolCall("call_2", "double", {"value": 2}),
-        ]),
-    ])
+    client = ScriptedClient(
+        [
+            AgentModelResponse(
+                [
+                    ToolCall("call_1", "double", {"value": 1}),
+                ]
+            ),
+            AgentModelResponse(
+                [
+                    ToolCall("call_2", "double", {"value": 2}),
+                ]
+            ),
+        ]
+    )
     runner = AgentRunner(
         client,
         ToolExecutor(registry),
         max_tool_rounds=1,
     )
-    coordinator = MultiAgentCoordinator([
-        AgentWorker("worker", "Run tools", runner),
-    ])
+    coordinator = MultiAgentCoordinator(
+        [
+            AgentWorker("worker", "Run tools", runner),
+        ]
+    )
 
-    result = coordinator.run([
-        AgentTask("task_1", "worker", "Keep doubling"),
-    ])
+    result = coordinator.run(
+        [
+            AgentTask("task_1", "worker", "Keep doubling"),
+        ]
+    )
 
     task_result = result.results[0]
     assert task_result.status is AgentTaskStatus.FAILED
-    assert task_result.state.stop_reason is (
-        AgentStopReason.MAX_TOOL_ROUNDS
-    )
+    assert task_result.state.stop_reason is (AgentStopReason.MAX_TOOL_ROUNDS)
     assert task_result.error == "Worker stopped: max_tool_rounds"
 
 
 def test_coordinator_preflights_all_assignments_before_execution():
     client = RecordingClient()
-    coordinator = MultiAgentCoordinator([
-        worker("known", client),
-    ])
+    coordinator = MultiAgentCoordinator(
+        [
+            worker("known", client),
+        ]
+    )
 
     with pytest.raises(CoordinationError, match="Unknown"):
-        coordinator.run([
-            AgentTask("task_1", "known", "Would run"),
-            AgentTask("task_2", "missing", "Cannot run"),
-        ])
+        coordinator.run(
+            [
+                AgentTask("task_1", "known", "Would run"),
+                AgentTask("task_2", "missing", "Cannot run"),
+            ]
+        )
 
     assert client.turns == []
 
     with pytest.raises(CoordinationError, match="unique"):
-        coordinator.run([
-            AgentTask("same", "known", "First"),
-            AgentTask("same", "known", "Second"),
-        ])
+        coordinator.run(
+            [
+                AgentTask("same", "known", "First"),
+                AgentTask("same", "known", "Second"),
+            ]
+        )
 
     assert client.turns == []
 
@@ -334,9 +347,11 @@ def test_worker_and_task_reject_invalid_fields(factory):
 
 
 def test_coordination_result_exposes_lookup_and_partitions():
-    completed_state = empty_runner().run([
-        {"role": "user", "content": "Complete"},
-    ])
+    completed_state = empty_runner().run(
+        [
+            {"role": "user", "content": "Complete"},
+        ]
+    )
     completed_task = AgentTask(
         "task_ok",
         "worker",

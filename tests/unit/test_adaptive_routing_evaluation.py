@@ -1,10 +1,8 @@
 import pytest
 
-from app.evaluate_routing import main
 from ai_sdk.agents import (
     CapabilityRouter,
-    RoutingSignal,
-    SuperAIRoute,
+    MultiModelRoute,
 )
 from ai_sdk.evaluation import (
     DEFAULT_ROUTE_EVAL_CASES,
@@ -14,12 +12,13 @@ from ai_sdk.evaluation import (
     RouteEvaluationReport,
     RouteEvaluationRunner,
 )
+from app.evaluate_routing import main
 
 
 def test_default_bilingual_route_benchmark_passes_offline():
-    report = RouteEvaluationRunner(
-        CapabilityRouter()
-    ).evaluate(DEFAULT_ROUTE_EVAL_CASES)
+    report = RouteEvaluationRunner(CapabilityRouter()).evaluate(
+        DEFAULT_ROUTE_EVAL_CASES
+    )
 
     assert report.total_cases == 24
     assert report.correct_cases == 24
@@ -49,14 +48,16 @@ def test_route_report_measures_mismatch_requests_and_latency():
         clock=lambda: next(times),
     )
 
-    report = runner.evaluate([
-        RouteEvalCase("correct", "Salom", SuperAIRoute.FAST),
-        RouteEvalCase(
-            "mismatch",
-            "Salom",
-            SuperAIRoute.CONTEXT,
-        ),
-    ])
+    report = runner.evaluate(
+        [
+            RouteEvalCase("correct", "Salom", MultiModelRoute.FAST),
+            RouteEvalCase(
+                "mismatch",
+                "Salom",
+                MultiModelRoute.CONTEXT,
+            ),
+        ]
+    )
 
     assert report.correct_cases == 1
     assert report.accuracy == 0.5
@@ -91,10 +92,12 @@ def test_route_failure_is_contained_and_does_not_leak_message():
         FailingRouter(),
         minimum_accuracy=0.5,
         clock=lambda: next(times),
-    ).evaluate([
-        RouteEvalCase("broken", "broken", SuperAIRoute.FAST),
-        RouteEvalCase("healthy", "Salom", SuperAIRoute.FAST),
-    ])
+    ).evaluate(
+        [
+            RouteEvalCase("broken", "broken", MultiModelRoute.FAST),
+            RouteEvalCase("healthy", "Salom", MultiModelRoute.FAST),
+        ]
+    )
 
     assert report.error_cases == 1
     assert report.passed is False
@@ -115,9 +118,11 @@ def test_route_runner_contains_invalid_decisions_and_error_names():
     invalid_report = RouteEvaluationRunner(
         InvalidRouter(),
         clock=lambda: next(invalid_times),
-    ).evaluate([
-        RouteEvalCase("invalid", "input", SuperAIRoute.FAST),
-    ])
+    ).evaluate(
+        [
+            RouteEvalCase("invalid", "input", MultiModelRoute.FAST),
+        ]
+    )
     unusual_error = type("x" * 129, (Exception,), {})
 
     class UnusualRouter(CapabilityRouter):
@@ -128,34 +133,34 @@ def test_route_runner_contains_invalid_decisions_and_error_names():
     unusual_report = RouteEvaluationRunner(
         UnusualRouter(),
         clock=lambda: next(unusual_times),
-    ).evaluate([
-        RouteEvalCase("unusual", "input", SuperAIRoute.FAST),
-    ])
+    ).evaluate(
+        [
+            RouteEvalCase("unusual", "input", MultiModelRoute.FAST),
+        ]
+    )
 
     assert invalid_report.results[0].error_type == "TypeError"
-    assert unusual_report.results[0].error_type == (
-        "RouteEvaluationError"
-    )
+    assert unusual_report.results[0].error_type == ("RouteEvaluationError")
 
 
 def test_route_eval_case_and_result_validate_contracts():
     valid = RouteEvalResult(
         "case",
-        SuperAIRoute.FAST,
-        SuperAIRoute.FAST,
+        MultiModelRoute.FAST,
+        MultiModelRoute.FAST,
         (),
         1,
         0.1,
     )
 
     invalid_factories = [
-        lambda: RouteEvalCase("", "input", SuperAIRoute.FAST),
-        lambda: RouteEvalCase("case", " ", SuperAIRoute.FAST),
+        lambda: RouteEvalCase("", "input", MultiModelRoute.FAST),
+        lambda: RouteEvalCase("case", " ", MultiModelRoute.FAST),
         lambda: RouteEvalCase("case", "input", "fast"),
         lambda: RouteEvalResult(
             "",
-            SuperAIRoute.FAST,
-            SuperAIRoute.FAST,
+            MultiModelRoute.FAST,
+            MultiModelRoute.FAST,
             (),
             1,
             0.1,
@@ -163,14 +168,14 @@ def test_route_eval_case_and_result_validate_contracts():
         lambda: RouteEvalResult(
             "case",
             "fast",
-            SuperAIRoute.FAST,
+            MultiModelRoute.FAST,
             (),
             1,
             0.1,
         ),
         lambda: RouteEvalResult(
             "case",
-            SuperAIRoute.FAST,
+            MultiModelRoute.FAST,
             "fast",
             (),
             1,
@@ -178,31 +183,31 @@ def test_route_eval_case_and_result_validate_contracts():
         ),
         lambda: RouteEvalResult(
             "case",
-            SuperAIRoute.FAST,
-            SuperAIRoute.FAST,
+            MultiModelRoute.FAST,
+            MultiModelRoute.FAST,
             ("invalid",),
             1,
             0.1,
         ),
         lambda: RouteEvalResult(
             "case",
-            SuperAIRoute.FAST,
-            SuperAIRoute.FAST,
+            MultiModelRoute.FAST,
+            MultiModelRoute.FAST,
             (),
             -1,
             0.1,
         ),
         lambda: RouteEvalResult(
             "case",
-            SuperAIRoute.FAST,
-            SuperAIRoute.FAST,
+            MultiModelRoute.FAST,
+            MultiModelRoute.FAST,
             (),
             1,
             float("nan"),
         ),
         lambda: RouteEvalResult(
             "case",
-            SuperAIRoute.FAST,
+            MultiModelRoute.FAST,
             None,
             (),
             0,
@@ -210,15 +215,15 @@ def test_route_eval_case_and_result_validate_contracts():
         ),
         lambda: RouteEvalResult(
             "case",
-            SuperAIRoute.FAST,
-            SuperAIRoute.FAST,
+            MultiModelRoute.FAST,
+            MultiModelRoute.FAST,
             (),
             2,
             0.1,
         ),
         lambda: RouteEvalResult(
             "case",
-            SuperAIRoute.FAST,
+            MultiModelRoute.FAST,
             None,
             (),
             0,
@@ -227,8 +232,8 @@ def test_route_eval_case_and_result_validate_contracts():
         ),
         lambda: RouteEvalResult(
             "case",
-            SuperAIRoute.FAST,
-            SuperAIRoute.FAST,
+            MultiModelRoute.FAST,
+            MultiModelRoute.FAST,
             (),
             1,
             0.1,
@@ -245,7 +250,7 @@ def test_route_eval_case_and_result_validate_contracts():
 
 
 def test_route_runner_validates_dataset_clock_and_router():
-    case = RouteEvalCase("case", "Salom", SuperAIRoute.FAST)
+    case = RouteEvalCase("case", "Salom", MultiModelRoute.FAST)
 
     with pytest.raises(EvaluationValidationError, match="CapabilityRouter"):
         RouteEvaluationRunner(object())

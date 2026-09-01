@@ -13,7 +13,7 @@ class AICapability(str, Enum):
     SYNTHESIS = "synthesis"
 
 
-class SuperAIRoute(str, Enum):
+class MultiModelRoute(str, Enum):
     FAST = "fast"
     CONTEXT = "context"
     REASONING = "reasoning"
@@ -29,18 +29,16 @@ class RoutingSignal(str, Enum):
 
 
 _ROUTE_CAPABILITIES = {
-    SuperAIRoute.FAST: (
-        AICapability.SYNTHESIS,
-    ),
-    SuperAIRoute.CONTEXT: (
+    MultiModelRoute.FAST: (AICapability.SYNTHESIS,),
+    MultiModelRoute.CONTEXT: (
         AICapability.CONTEXT,
         AICapability.SYNTHESIS,
     ),
-    SuperAIRoute.REASONING: (
+    MultiModelRoute.REASONING: (
         AICapability.REASONING,
         AICapability.SYNTHESIS,
     ),
-    SuperAIRoute.FULL: (
+    MultiModelRoute.FULL: (
         AICapability.CONTEXT,
         AICapability.REASONING,
         AICapability.SYNTHESIS,
@@ -48,36 +46,31 @@ _ROUTE_CAPABILITIES = {
 }
 
 _ROUTE_MODEL_REQUESTS = {
-    SuperAIRoute.FAST: 1,
-    SuperAIRoute.CONTEXT: 2,
-    SuperAIRoute.REASONING: 2,
-    SuperAIRoute.FULL: 3,
+    MultiModelRoute.FAST: 1,
+    MultiModelRoute.CONTEXT: 2,
+    MultiModelRoute.REASONING: 2,
+    MultiModelRoute.FULL: 3,
 }
 
 
 @dataclass(frozen=True, init=False)
 class RoutingDecision:
-    route: SuperAIRoute
+    route: MultiModelRoute
     capabilities: tuple[AICapability, ...]
     signals: tuple[RoutingSignal, ...]
 
     def __init__(
         self,
-        route: SuperAIRoute,
+        route: MultiModelRoute,
         signals: tuple[RoutingSignal, ...] = (),
     ) -> None:
-        if not isinstance(route, SuperAIRoute):
-            raise TypeError("Super AI route is invalid.")
+        if not isinstance(route, MultiModelRoute):
+            raise TypeError("Adaptive Multi-Model route is invalid.")
         normalized_signals = tuple(signals)
-        if any(
-            not isinstance(signal, RoutingSignal)
-            for signal in normalized_signals
-        ):
+        if any(not isinstance(signal, RoutingSignal) for signal in normalized_signals):
             raise TypeError("Routing signals are invalid.")
         if len(normalized_signals) != len(set(normalized_signals)):
-            raise CoordinationError(
-                "Routing signals must be unique."
-            )
+            raise CoordinationError("Routing signals must be unique.")
         object.__setattr__(self, "route", route)
         object.__setattr__(
             self,
@@ -96,38 +89,40 @@ class RoutingDecision:
 
 
 class CapabilityRouter:
-    """Choose a bounded Super AI workflow without another model call."""
+    """Choose a bounded Adaptive Multi-Model workflow without another model call."""
 
     _CONTEXT_MARKERS = (
         "retrieved context:",
         "manba konteksti:",
     )
-    _CONTEXT_TERMS = frozenset({
-        "citation",
-        "citations",
-        "context",
-        "dalil",
-        "document",
-        "documents",
-        "evidence",
-        "fact",
-        "facts",
-        "fakt",
-        "faktlar",
-        "hujjat",
-        "hujjatlar",
-        "iqtibos",
-        "kontekst",
-        "manba",
-        "manbalar",
-        "research",
-        "source",
-        "sources",
-        "tadqiqot",
-        "tekshir",
-        "verification",
-        "verify",
-    })
+    _CONTEXT_TERMS = frozenset(
+        {
+            "citation",
+            "citations",
+            "context",
+            "dalil",
+            "document",
+            "documents",
+            "evidence",
+            "fact",
+            "facts",
+            "fakt",
+            "faktlar",
+            "hujjat",
+            "hujjatlar",
+            "iqtibos",
+            "kontekst",
+            "manba",
+            "manbalar",
+            "research",
+            "source",
+            "sources",
+            "tadqiqot",
+            "tekshir",
+            "verification",
+            "verify",
+        }
+    )
     _CONTEXT_PREFIXES = (
         "dalil",
         "fakt",
@@ -138,32 +133,34 @@ class CapabilityRouter:
         "tadqiq",
         "tekshir",
     )
-    _REASONING_TERMS = frozenset({
-        "analysis",
-        "analyze",
-        "architecture",
-        "arxitektura",
-        "compare",
-        "comparison",
-        "chuqur",
-        "design",
-        "isbot",
-        "loyiha",
-        "nega",
-        "plan",
-        "proof",
-        "reason",
-        "reasoning",
-        "reja",
-        "sabab",
-        "solution",
-        "solve",
-        "taqqosla",
-        "taqqoslash",
-        "tahlil",
-        "tradeoff",
-        "yechim",
-    })
+    _REASONING_TERMS = frozenset(
+        {
+            "analysis",
+            "analyze",
+            "architecture",
+            "arxitektura",
+            "compare",
+            "comparison",
+            "chuqur",
+            "design",
+            "isbot",
+            "loyiha",
+            "nega",
+            "plan",
+            "proof",
+            "reason",
+            "reasoning",
+            "reja",
+            "sabab",
+            "solution",
+            "solve",
+            "taqqosla",
+            "taqqoslash",
+            "tahlil",
+            "tradeoff",
+            "yechim",
+        }
+    )
     _REASONING_PREFIXES = (
         "reja",
         "tahlil",
@@ -183,11 +180,7 @@ class CapabilityRouter:
             (long_request_chars, "Long request threshold"),
             (max_analyzed_chars, "Maximum analyzed characters"),
         ):
-            if (
-                not isinstance(value, int)
-                or isinstance(value, bool)
-                or value <= 0
-            ):
+            if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
                 raise ValueError(f"{label} must be positive.")
         if max_analyzed_chars < long_request_chars:
             raise ValueError(
@@ -207,8 +200,7 @@ class CapabilityRouter:
         signals: list[RoutingSignal] = []
 
         has_retrieval_context = any(
-            marker in analyzed
-            for marker in self._CONTEXT_MARKERS
+            marker in analyzed for marker in self._CONTEXT_MARKERS
         )
         has_context_keyword = bool(
             words.intersection(self._CONTEXT_TERMS)
@@ -225,8 +217,7 @@ class CapabilityRouter:
             )
         )
         is_multi_part = (
-            analyzed.count("?") >= 2
-            or len(self._NUMBERED_ITEM.findall(analyzed)) >= 2
+            analyzed.count("?") >= 2 or len(self._NUMBERED_ITEM.findall(analyzed)) >= 2
         )
         is_long = len(normalized) >= self.long_request_chars
 
@@ -241,24 +232,16 @@ class CapabilityRouter:
         if is_long:
             signals.append(RoutingSignal.LONG_REQUEST)
 
-        needs_context = (
-            has_retrieval_context
-            or has_context_keyword
-            or is_long
-        )
-        needs_reasoning = (
-            has_reasoning_keyword
-            or is_multi_part
-            or is_long
-        )
+        needs_context = has_retrieval_context or has_context_keyword or is_long
+        needs_reasoning = has_reasoning_keyword or is_multi_part or is_long
         if needs_context and needs_reasoning:
-            selected = SuperAIRoute.FULL
+            selected = MultiModelRoute.FULL
         elif needs_context:
-            selected = SuperAIRoute.CONTEXT
+            selected = MultiModelRoute.CONTEXT
         elif needs_reasoning:
-            selected = SuperAIRoute.REASONING
+            selected = MultiModelRoute.REASONING
         else:
-            selected = SuperAIRoute.FAST
+            selected = MultiModelRoute.FAST
 
         return RoutingDecision(selected, tuple(signals))
 
@@ -267,8 +250,4 @@ class CapabilityRouter:
         words: set[str],
         prefixes: tuple[str, ...],
     ) -> bool:
-        return any(
-            word.startswith(prefix)
-            for word in words
-            for prefix in prefixes
-        )
+        return any(word.startswith(prefix) for word in words for prefix in prefixes)

@@ -3,7 +3,6 @@ from dataclasses import dataclass
 
 from ai_sdk.tools.schema import ToolSchema
 
-
 ToolHandler = Callable[..., object]
 
 
@@ -25,14 +24,10 @@ class ToolRegistry:
         handler: ToolHandler,
     ) -> None:
         if not isinstance(schema, ToolSchema):
-            raise TypeError(
-                "Registered tool schema must be a ToolSchema."
-            )
+            raise TypeError("Registered tool schema must be a ToolSchema.")
 
         if schema.name in self._tools:
-            raise ValueError(
-                f"Tool is already registered: {schema.name}"
-            )
+            raise ValueError(f"Tool is already registered: {schema.name}")
 
         if not callable(handler):
             raise TypeError("Tool handler must be callable.")
@@ -46,16 +41,10 @@ class ToolRegistry:
         return self._tools.get(name)
 
     def schemas(self) -> list[ToolSchema]:
-        return [
-            tool.schema
-            for tool in self._tools.values()
-        ]
+        return [tool.schema for tool in self._tools.values()]
 
     def provider_schemas(self) -> list[dict[str, object]]:
-        return [
-            schema.to_json_schema()
-            for schema in self.schemas()
-        ]
+        return [schema.to_json_schema() for schema in self.schemas()]
 
     def count(self) -> int:
         return len(self._tools)

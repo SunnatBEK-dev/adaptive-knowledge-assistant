@@ -25,19 +25,13 @@ class HybridRetriever(SemanticRetriever):
         )
 
         if not 0.0 <= semantic_weight <= 1.0:
-            raise ValueError(
-                "Semantic weight must be between zero and one."
-            )
+            raise ValueError("Semantic weight must be between zero and one.")
 
         if candidate_multiplier <= 0:
-            raise ValueError(
-                "Candidate multiplier must be greater than zero."
-            )
+            raise ValueError("Candidate multiplier must be greater than zero.")
 
         if rank_constant < 0:
-            raise ValueError(
-                "Rank constant cannot be negative."
-            )
+            raise ValueError("Rank constant cannot be negative.")
 
         self.semantic_weight = semantic_weight
         self.candidate_multiplier = candidate_multiplier
@@ -49,34 +43,26 @@ class HybridRetriever(SemanticRetriever):
         k: int = 5,
     ) -> list[SearchResult]:
         if not query.strip():
-            raise ValueError(
-                "Retrieval query cannot be empty."
-            )
+            raise ValueError("Retrieval query cannot be empty.")
 
         if k <= 0:
-            raise ValueError(
-                "Top-k value must be greater than zero."
-            )
+            raise ValueError("Top-k value must be greater than zero.")
 
         candidate_k = k * self.candidate_multiplier
         semantic_results = []
         lexical_results = []
 
         if self.semantic_weight > 0.0:
-            query_vector = self.embedding_client.embed_one(
-                query
-            )
+            query_vector = self.embedding_client.embed_one(query)
             semantic_results = self.vector_store.search(
                 query_vector=query_vector,
                 k=candidate_k,
             )
 
         if self.semantic_weight < 1.0:
-            lexical_results = (
-                self.vector_store.lexical_search(
-                    query=query,
-                    k=candidate_k,
-                )
+            lexical_results = self.vector_store.lexical_search(
+                query=query,
+                k=candidate_k,
             )
 
         return fuse_ranked_results(

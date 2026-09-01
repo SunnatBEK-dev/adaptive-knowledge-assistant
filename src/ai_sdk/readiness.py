@@ -4,7 +4,6 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-
 _PROVIDER_CONFIGURATION = (
     (
         "anthropic",
@@ -53,22 +52,18 @@ class ProviderReadiness:
 
 
 @dataclass(frozen=True)
-class AIReadinessReport:
+class ProviderReadinessReport:
     """Local configuration status without network requests or secrets."""
 
     providers: tuple[ProviderReadiness, ...]
 
     @property
-    def super_ai_ready(self) -> bool:
+    def adaptive_ready(self) -> bool:
         return all(provider.ready for provider in self.providers)
 
     @property
-    def direct_chat_ready_providers(self) -> tuple[str, ...]:
-        return tuple(
-            provider.provider
-            for provider in self.providers
-            if provider.ready
-        )
+    def single_model_ready_providers(self) -> tuple[str, ...]:
+        return tuple(provider.provider for provider in self.providers if provider.ready)
 
     def for_provider(self, name: str) -> ProviderReadiness:
         normalized = name.strip().casefold()
@@ -79,19 +74,15 @@ class AIReadinessReport:
 
     def to_dict(self) -> dict[str, object]:
         return {
-            "super_ai_ready": self.super_ai_ready,
-            "direct_chat_ready_providers": list(
-                self.direct_chat_ready_providers
-            ),
-            "providers": [
-                provider.to_dict() for provider in self.providers
-            ],
+            "adaptive_ready": self.adaptive_ready,
+            "single_model_ready_providers": list(self.single_model_ready_providers),
+            "providers": [provider.to_dict() for provider in self.providers],
         }
 
 
-def inspect_ai_readiness(
+def inspect_provider_readiness(
     environment: Mapping[str, str] | None = None,
-) -> AIReadinessReport:
+) -> ProviderReadinessReport:
     """Inspect required variable presence without returning values."""
 
     values = os.environ if environment is None else environment
@@ -100,26 +91,24 @@ def inspect_ai_readiness(
 
     shared_model = _is_configured(values.get("MODEL"))
     providers: list[ProviderReadiness] = []
-    for provider, display_name, key_name, model_name in (
-        _PROVIDER_CONFIGURATION
-    ):
+    for provider, display_name, key_name, model_name in _PROVIDER_CONFIGURATION:
         key_configured = _is_configured(values.get(key_name))
-        model_configured = (
-            _is_configured(values.get(model_name)) or shared_model
-        )
+        model_configured = _is_configured(values.get(model_name)) or shared_model
         missing: list[str] = []
         if not key_configured:
             missing.append(key_name)
         if not model_configured:
             missing.append(f"{model_name}/MODEL")
-        providers.append(ProviderReadiness(
-            provider=provider,
-            display_name=display_name,
-            api_key_configured=key_configured,
-            model_configured=model_configured,
-            missing_variables=tuple(missing),
-        ))
-    return AIReadinessReport(tuple(providers))
+        providers.append(
+            ProviderReadiness(
+                provider=provider,
+                display_name=display_name,
+                api_key_configured=key_configured,
+                model_configured=model_configured,
+                missing_variables=tuple(missing),
+            )
+        )
+    return ProviderReadinessReport(tuple(providers))
 
 
 def _is_configured(value: object) -> bool:

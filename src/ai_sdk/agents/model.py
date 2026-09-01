@@ -33,30 +33,21 @@ class AgentModelResponse:
         normalized = tuple(blocks)
 
         if any(
-            not isinstance(block, (AgentTextBlock, ToolCall))
-            for block in normalized
+            not isinstance(block, (AgentTextBlock, ToolCall)) for block in normalized
         ):
-            raise TypeError(
-                "Agent response blocks are invalid."
-            )
+            raise TypeError("Agent response blocks are invalid.")
 
         object.__setattr__(self, "blocks", normalized)
 
     @property
     def text(self) -> str:
         return "".join(
-            block.text
-            for block in self.blocks
-            if isinstance(block, AgentTextBlock)
+            block.text for block in self.blocks if isinstance(block, AgentTextBlock)
         )
 
     @property
     def tool_calls(self) -> tuple[ToolCall, ...]:
-        return tuple(
-            block
-            for block in self.blocks
-            if isinstance(block, ToolCall)
-        )
+        return tuple(block for block in self.blocks if isinstance(block, ToolCall))
 
 
 @dataclass(frozen=True, init=False)
@@ -76,41 +67,29 @@ class AgentEvent:
             or isinstance(iteration, bool)
             or iteration <= 0
         ):
-            raise ValueError(
-                "Agent iteration must be greater than zero."
-            )
+            raise ValueError("Agent iteration must be greater than zero.")
 
         if not isinstance(response, AgentModelResponse):
-            raise TypeError(
-                "Agent event response is invalid."
-            )
+            raise TypeError("Agent event response is invalid.")
 
         normalized_results = tuple(tool_results)
 
-        if any(
-            not isinstance(result, ToolResult)
-            for result in normalized_results
-        ):
-            raise TypeError(
-                "Agent tool results are invalid."
-            )
+        if any(not isinstance(result, ToolResult) for result in normalized_results):
+            raise TypeError("Agent tool results are invalid.")
 
         calls = response.tool_calls
 
         if normalized_results and (
             len(calls) != len(normalized_results)
             or any(
-                call.id != result.call_id
-                or call.name != result.name
+                call.id != result.call_id or call.name != result.name
                 for call, result in zip(
                     calls,
                     normalized_results,
                 )
             )
         ):
-            raise ValueError(
-                "Agent tool results do not match tool calls."
-            )
+            raise ValueError("Agent tool results do not match tool calls.")
 
         object.__setattr__(self, "iteration", iteration)
         object.__setattr__(self, "response", response)

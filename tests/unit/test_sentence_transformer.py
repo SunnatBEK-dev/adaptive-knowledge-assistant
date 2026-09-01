@@ -20,10 +20,12 @@ class FakeModel:
         self.calls = []
 
     def encode(self, sentences, *, convert_to_numpy):
-        self.calls.append({
-            "sentences": sentences,
-            "convert_to_numpy": convert_to_numpy,
-        })
+        self.calls.append(
+            {
+                "sentences": sentences,
+                "convert_to_numpy": convert_to_numpy,
+            }
+        )
 
         if self.error:
             raise self.error
@@ -32,18 +34,18 @@ class FakeModel:
 
 
 def test_embed_converts_provider_batch_to_plain_float_vectors():
-    model = FakeModel(
-        result=FakeArray([[1, 2.5], [3, 4]])
-    )
+    model = FakeModel(result=FakeArray([[1, 2.5], [3, 4]]))
     client = SentenceTransformerEmbeddingClient(model=model)
 
     vectors = client.embed(("first", "second"))
 
     assert vectors == [[1.0, 2.5], [3.0, 4.0]]
-    assert model.calls == [{
-        "sentences": ["first", "second"],
-        "convert_to_numpy": True,
-    }]
+    assert model.calls == [
+        {
+            "sentences": ["first", "second"],
+            "convert_to_numpy": True,
+        }
+    ]
 
 
 def test_embed_one_uses_the_shared_batch_adapter():

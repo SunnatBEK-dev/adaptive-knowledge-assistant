@@ -1,8 +1,7 @@
 import pytest
 
 import ai_sdk.llm.factory as factory_module
-from ai_sdk.llm.factory import create_llm_client
-from ai_sdk.llm.factory import normalize_llm_provider
+from ai_sdk.llm.factory import create_llm_client, normalize_llm_provider
 
 
 def test_factory_creates_selected_provider(monkeypatch):
@@ -11,7 +10,7 @@ def test_factory_creates_selected_provider(monkeypatch):
     gemini_client = object()
     monkeypatch.setattr(
         factory_module,
-        "ClaudeClient",
+        "AnthropicClient",
         lambda: anthropic_client,
     )
     monkeypatch.setattr(
@@ -32,7 +31,7 @@ def test_factory_creates_selected_provider(monkeypatch):
 
 def test_factory_uses_environment_provider(monkeypatch):
     expected = object()
-    monkeypatch.setattr(factory_module, "AI_PROVIDER", "openai")
+    monkeypatch.setattr(factory_module, "DEFAULT_AI_PROVIDER", "openai")
     monkeypatch.setattr(
         factory_module,
         "OpenAIClient",

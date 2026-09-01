@@ -15,8 +15,8 @@ from ai_sdk.observability import (
     Tracer,
     trace_span,
 )
-from ai_sdk.retrieval.chunk import Chunk
 from ai_sdk.retrieval.catalog import IndexedDocument
+from ai_sdk.retrieval.chunk import Chunk
 from ai_sdk.retrieval.chunker import TextChunker
 from ai_sdk.retrieval.document import Document
 from ai_sdk.retrieval.retriever import (
@@ -45,9 +45,7 @@ class RAGConversationManager(ConversationManager):
         tracer: Tracer | None = None,
     ) -> None:
         if retrieval_k <= 0:
-            raise ValueError(
-                "Retrieval top-k must be greater than zero."
-            )
+            raise ValueError("Retrieval top-k must be greater than zero.")
 
         super().__init__(
             conversation=conversation,
@@ -83,9 +81,7 @@ class RAGConversationManager(ConversationManager):
         self,
         document_id: str,
     ) -> int:
-        return self.retriever.delete_document(
-            document_id
-        )
+        return self.retriever.delete_document(document_id)
 
     def list_documents(self) -> list[str]:
         return self.retriever.list_documents()
@@ -117,9 +113,7 @@ class RAGConversationManager(ConversationManager):
         memory_results = self._recall_memories(text)
 
         if not self.list_documents():
-            return self.prompt_builder.build_messages(
-                memory_results=memory_results
-            )
+            return self.prompt_builder.build_messages(memory_results=memory_results)
 
         with trace_span(
             self.tracer,

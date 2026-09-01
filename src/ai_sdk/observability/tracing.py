@@ -9,7 +9,6 @@ from time import perf_counter_ns, time_ns
 from typing import Protocol
 
 from ai_sdk.observability.model import (
-    TraceAttributeValue,
     TraceCategory,
     TraceRecord,
     TraceStatus,
@@ -20,7 +19,6 @@ from ai_sdk.observability.model import (
     _validate_trace_id,
     sanitize_trace_attributes,
 )
-
 
 TraceIdFactory = Callable[[], str]
 Clock = Callable[[], int]
@@ -42,19 +40,13 @@ class InMemoryTraceCollector:
             or isinstance(max_records, bool)
             or max_records <= 0
         ):
-            raise TraceValidationError(
-                "Trace collector capacity must be positive."
-            )
-        self._records: deque[TraceRecord] = deque(
-            maxlen=max_records
-        )
+            raise TraceValidationError("Trace collector capacity must be positive.")
+        self._records: deque[TraceRecord] = deque(maxlen=max_records)
         self._lock = Lock()
 
     def emit(self, record: TraceRecord) -> None:
         if not isinstance(record, TraceRecord):
-            raise TraceValidationError(
-                "Trace collector record is invalid."
-            )
+            raise TraceValidationError("Trace collector record is invalid.")
         with self._lock:
             self._records.append(record)
 
@@ -66,14 +58,8 @@ class InMemoryTraceCollector:
         with self._lock:
             records = tuple(self._records)
         if trace_id is not None:
-            records = tuple(
-                record
-                for record in records
-                if record.trace_id == trace_id
-            )
-        return tuple(
-            sorted(records, key=lambda record: record.started_at_ns)
-        )
+            records = tuple(record for record in records if record.trace_id == trace_id)
+        return tuple(sorted(records, key=lambda record: record.started_at_ns))
 
     def clear(self) -> None:
         with self._lock:
@@ -127,18 +113,12 @@ class TraceSpan:
         self._entered = True
         parent = self._tracer._current.get()
         self._trace_id = (
-            parent.trace_id
-            if parent is not None
-            else self._tracer._new_trace_id()
+            parent.trace_id if parent is not None else self._tracer._new_trace_id()
         )
         self._span_id = self._tracer._new_span_id()
-        self._parent_span_id = (
-            None if parent is None else parent.span_id
-        )
+        self._parent_span_id = None if parent is None else parent.span_id
         self._started_at_ns = self._tracer._wall_clock_ns()
-        self._started_monotonic_ns = (
-            self._tracer._monotonic_clock_ns()
-        )
+        self._started_monotonic_ns = self._tracer._monotonic_clock_ns()
         self._token = self._tracer._current.set(
             _ActiveSpan(self._trace_id, self._span_id)
         )
@@ -146,10 +126,8 @@ class TraceSpan:
 
     def set_attribute(self, key: str, value: object) -> None:
         if not self._entered or self._finished:
-            raise TraceValidationError(
-                "Trace attributes require an active span."
-            )
-        updated = dict(self._attributes)
+            raise TraceValidationError("Trace attributes require an active span.")
+        updated: dict[str, object] = dict(self._attributes)
         updated[key] = value
         self._attributes = sanitize_trace_attributes(updated)
 
@@ -174,9 +152,7 @@ class TraceSpan:
 
     def _finish(self) -> None:
         if not self._entered or self._finished:
-            raise TraceValidationError(
-                "Trace span is not active."
-            )
+            raise TraceValidationError("Trace span is not active.")
         self._finished = True
         ended = self._tracer._monotonic_clock_ns()
         duration = max(0, ended - self._started_monotonic_ns)
@@ -211,23 +187,15 @@ class Tracer:
     ) -> None:
         if not hasattr(collector, "emit") or not callable(collector.emit):
             raise TraceValidationError("Trace collector is invalid.")
-        if trace_id_factory is not None and not callable(
-            trace_id_factory
-        ):
+        if trace_id_factory is not None and not callable(trace_id_factory):
             raise TraceValidationError("Trace ID factory is invalid.")
         if span_id_factory is not None and not callable(span_id_factory):
             raise TraceValidationError("Span ID factory is invalid.")
-        if not callable(wall_clock_ns) or not callable(
-            monotonic_clock_ns
-        ):
+        if not callable(wall_clock_ns) or not callable(monotonic_clock_ns):
             raise TraceValidationError("Trace clock is invalid.")
         self._collector = collector
-        self._trace_id_factory = trace_id_factory or (
-            lambda: token_hex(16)
-        )
-        self._span_id_factory = span_id_factory or (
-            lambda: token_hex(8)
-        )
+        self._trace_id_factory = trace_id_factory or (lambda: token_hex(16))
+        self._span_id_factory = span_id_factory or (lambda: token_hex(8))
         self._wall_clock_ns = wall_clock_ns
         self._monotonic_clock_ns = monotonic_clock_ns
         self._current: ContextVar[_ActiveSpan | None] = ContextVar(

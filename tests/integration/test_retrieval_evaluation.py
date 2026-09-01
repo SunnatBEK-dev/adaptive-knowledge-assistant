@@ -12,14 +12,13 @@ from ai_sdk.evaluation.retrieval import (
     RetrievalEvaluator,
 )
 from ai_sdk.retrieval.chunk import Chunk
+from ai_sdk.retrieval.hybrid import HybridRetriever
 from ai_sdk.retrieval.in_memory import (
     InMemoryVectorStore,
 )
-from ai_sdk.retrieval.hybrid import HybridRetriever
 from ai_sdk.retrieval.retriever import (
     SemanticRetriever,
 )
-
 
 pytestmark = pytest.mark.integration
 
@@ -27,10 +26,7 @@ pytestmark = pytest.mark.integration
 class KeywordEmbeddingClient(BaseEmbeddingClient):
     def embed(self, texts):
         return [
-            [1.0, 0.0]
-            if "python" in text.lower()
-            else [0.0, 1.0]
-            for text in texts
+            [1.0, 0.0] if "python" in text.lower() else [0.0, 1.0] for text in texts
         ]
 
 
@@ -39,32 +35,30 @@ def test_real_retriever_scores_offline_evaluation_dataset():
         embedding_client=KeywordEmbeddingClient(),
         vector_store=InMemoryVectorStore(),
     )
-    retriever.index([
-        Chunk(
-            id="chunk_python",
-            document_id="doc_guide",
-            content="Python functions",
-            index=0,
-        ),
-        Chunk(
-            id="chunk_cooking",
-            document_id="doc_guide",
-            content="Cooking recipes",
-            index=1,
-        ),
-    ])
+    retriever.index(
+        [
+            Chunk(
+                id="chunk_python",
+                document_id="doc_guide",
+                content="Python functions",
+                index=0,
+            ),
+            Chunk(
+                id="chunk_cooking",
+                document_id="doc_guide",
+                content="Cooking recipes",
+                index=1,
+            ),
+        ]
+    )
     cases = [
         RetrievalEvalCase(
             query="How do Python functions work?",
-            expected_chunk_ids=frozenset({
-                "chunk_python"
-            }),
+            expected_chunk_ids=frozenset({"chunk_python"}),
         ),
         RetrievalEvalCase(
             query="How should I start cooking?",
-            expected_chunk_ids=frozenset({
-                "chunk_cooking"
-            }),
+            expected_chunk_ids=frozenset({"chunk_cooking"}),
         ),
     ]
 
@@ -84,20 +78,22 @@ def test_general_eval_harness_scores_a_real_sdk_component():
         embedding_client=KeywordEmbeddingClient(),
         vector_store=InMemoryVectorStore(),
     )
-    retriever.index([
-        Chunk(
-            id="chunk_python",
-            document_id="doc_guide",
-            content="Python functions",
-            index=0,
-        ),
-        Chunk(
-            id="chunk_cooking",
-            document_id="doc_guide",
-            content="Cooking recipes",
-            index=1,
-        ),
-    ])
+    retriever.index(
+        [
+            Chunk(
+                id="chunk_python",
+                document_id="doc_guide",
+                content="Python functions",
+                index=0,
+            ),
+            Chunk(
+                id="chunk_cooking",
+                document_id="doc_guide",
+                content="Cooking recipes",
+                index=1,
+            ),
+        ]
+    )
 
     def retrieve_first_chunk_id(query):
         return retriever.retrieve(query, k=1)[0].chunk.id
@@ -207,8 +203,6 @@ def test_semantic_and_hybrid_retrievers_are_compared_on_same_cases():
     assert comparison.candidate.hit_rate == pytest.approx(1.0)
     assert comparison.hit_rate_delta == pytest.approx(1 / 3)
     assert comparison.mean_recall_delta == pytest.approx(1 / 3)
-    assert comparison.mean_reciprocal_rank_delta == pytest.approx(
-        1 / 3
-    )
+    assert comparison.mean_reciprocal_rank_delta == pytest.approx(1 / 3)
     assert comparison.candidate_improved is True
     assert comparison.candidate_regressed is False

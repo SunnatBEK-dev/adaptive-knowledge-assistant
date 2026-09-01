@@ -11,12 +11,12 @@ from ai_sdk.mcp.model import (
     MCPImplementation,
     MCPInputRequiredResult,
     MCPRequestContext,
+    MCPResourcePage,
     MCPResourceReadRequest,
     MCPResourceReadResult,
-    MCPResourcePage,
+    MCPToolPage,
     MCPToolRequest,
     MCPToolResult,
-    MCPToolPage,
     MCPValidationError,
 )
 from ai_sdk.mcp.transport import (
@@ -105,17 +105,13 @@ class MCPClient:
             or isinstance(timeout_seconds, bool)
             or timeout_seconds <= 0
         ):
-            raise MCPValidationError(
-                "MCP timeout must be greater than zero."
-            )
+            raise MCPValidationError("MCP timeout must be greater than zero.")
         if (
             not isinstance(max_input_rounds, int)
             or isinstance(max_input_rounds, bool)
             or max_input_rounds <= 0
         ):
-            raise MCPValidationError(
-                "MCP maximum input rounds must be positive."
-            )
+            raise MCPValidationError("MCP maximum input rounds must be positive.")
         if tracer is not None and not isinstance(tracer, Tracer):
             raise MCPValidationError("MCP tracer must be a Tracer.")
 
@@ -150,25 +146,18 @@ class MCPClient:
 
     def open(self) -> None:
         if self._state is not MCPConnectionState.NEW:
-            raise MCPLifecycleError(
-                "MCP client can only open from the new state."
-            )
+            raise MCPLifecycleError("MCP client can only open from the new state.")
 
         self._state = MCPConnectionState.OPENING
         try:
-            self._transport.open(
-                timeout_seconds=self._timeout_seconds
-            )
+            self._transport.open(timeout_seconds=self._timeout_seconds)
         except TimeoutError as error:
             self._abort()
-            raise MCPTimeoutError(
-                "MCP transport open timed out."
-            ) from error
+            raise MCPTimeoutError("MCP transport open timed out.") from error
         except Exception as error:
             self._abort()
             raise MCPTransportError(
-                "MCP transport open failed: "
-                f"{type(error).__name__}"
+                f"MCP transport open failed: {type(error).__name__}"
             ) from error
 
         self._transport_opened = True
@@ -183,16 +172,10 @@ class MCPClient:
             ),
         )
         if not isinstance(result, MCPDiscoveryResult):
+            self._fail_protocol("MCP discovery returned an invalid result.")
+        if self._context.protocol_version not in result.supported_versions:
             self._fail_protocol(
-                "MCP discovery returned an invalid result."
-            )
-        if (
-            self._context.protocol_version
-            not in result.supported_versions
-        ):
-            self._fail_protocol(
-                "MCP server does not support the requested protocol "
-                "version."
+                "MCP server does not support the requested protocol version."
             )
 
         self._discovery = result
@@ -209,9 +192,7 @@ class MCPClient:
             self._discovery is not None
             and not self._discovery.capabilities.supports_tools
         ):
-            raise MCPCapabilityError(
-                "MCP server did not advertise tools support."
-            )
+            raise MCPCapabilityError("MCP server did not advertise tools support.")
 
         page = self._request(
             "tools/list",
@@ -222,14 +203,10 @@ class MCPClient:
             ),
         )
         if not isinstance(page, MCPToolPage):
-            self._fail_protocol(
-                "MCP tools/list returned an invalid page."
-            )
+            self._fail_protocol("MCP tools/list returned an invalid page.")
         names = [tool.name for tool in page.tools]
         if len(set(names)) != len(names):
-            self._fail_protocol(
-                "MCP tools/list returned duplicate tool names."
-            )
+            self._fail_protocol("MCP tools/list returned duplicate tool names.")
         return page
 
     def list_resources(
@@ -243,9 +220,7 @@ class MCPClient:
             self._discovery is not None
             and not self._discovery.capabilities.supports_resources
         ):
-            raise MCPCapabilityError(
-                "MCP server did not advertise resources support."
-            )
+            raise MCPCapabilityError("MCP server did not advertise resources support.")
 
         page = self._request(
             "resources/list",
@@ -256,14 +231,10 @@ class MCPClient:
             ),
         )
         if not isinstance(page, MCPResourcePage):
-            self._fail_protocol(
-                "MCP resources/list returned an invalid page."
-            )
+            self._fail_protocol("MCP resources/list returned an invalid page.")
         uris = [resource.uri for resource in page.resources]
         if len(set(uris)) != len(uris):
-            self._fail_protocol(
-                "MCP resources/list returned duplicate resource URIs."
-            )
+            self._fail_protocol("MCP resources/list returned duplicate resource URIs.")
         return page
 
     def call_tool(
@@ -276,9 +247,7 @@ class MCPClient:
             self._discovery is not None
             and not self._discovery.capabilities.supports_tools
         ):
-            raise MCPCapabilityError(
-                "MCP server did not advertise tools support."
-            )
+            raise MCPCapabilityError("MCP server did not advertise tools support.")
         request = MCPToolRequest(name, arguments)
         result = self._request(
             "tools/call",
@@ -304,9 +273,7 @@ class MCPClient:
             self._discovery is not None
             and not self._discovery.capabilities.supports_resources
         ):
-            raise MCPCapabilityError(
-                "MCP server did not advertise resources support."
-            )
+            raise MCPCapabilityError("MCP server did not advertise resources support.")
         request = MCPResourceReadRequest(uri)
         result = self._request(
             "resources/read",
@@ -349,13 +316,10 @@ class MCPClient:
             )
         if set(retry.input_responses) != pending.input_keys:
             raise MCPContinuationError(
-                "MCP input responses must exactly match the pending "
-                "request keys."
+                "MCP input responses must exactly match the pending request keys."
             )
 
-        self._pending_continuations.pop(
-            continuation.continuation_id
-        )
+        self._pending_continuations.pop(continuation.continuation_id)
         if isinstance(retry, MCPToolRequest):
             result = self._request(
                 "tools/call continuation",
@@ -387,17 +351,14 @@ class MCPClient:
     ) -> None:
         self._require_open()
         self._pending_continuation(continuation)
-        self._pending_continuations.pop(
-            continuation.continuation_id
-        )
+        self._pending_continuations.pop(continuation.continuation_id)
 
     def close(self) -> None:
         if self._state is MCPConnectionState.CLOSED:
             return
 
         should_close_transport = (
-            self._transport_opened
-            or self._state is MCPConnectionState.OPENING
+            self._transport_opened or self._state is MCPConnectionState.OPENING
         )
         self._transport_opened = False
         self._state = MCPConnectionState.CLOSED
@@ -409,8 +370,7 @@ class MCPClient:
             self._transport.close()
         except Exception as error:
             raise MCPTransportError(
-                "MCP transport close failed: "
-                f"{type(error).__name__}"
+                f"MCP transport close failed: {type(error).__name__}"
             ) from error
 
     def __enter__(self) -> "MCPClient":
@@ -441,9 +401,7 @@ class MCPClient:
                 ) from error
             except TimeoutError as error:
                 self._abort()
-                raise MCPTimeoutError(
-                    f"MCP {operation} timed out."
-                ) from error
+                raise MCPTimeoutError(f"MCP {operation} timed out.") from error
             except Exception as error:
                 self._abort()
                 raise MCPTransportError(
@@ -479,13 +437,13 @@ class MCPClient:
                 result.input_requests,
                 round=round,
             )
-            self._pending_continuations[
-                continuation.continuation_id
-            ] = _PendingContinuation(
-                continuation,
-                request,
-                result.request_state,
-                frozenset(result.input_requests),
+            self._pending_continuations[continuation.continuation_id] = (
+                _PendingContinuation(
+                    continuation,
+                    request,
+                    result.request_state,
+                    frozenset(result.input_requests),
+                )
             )
             return continuation
         if operation == "tools/call" and isinstance(
@@ -498,21 +456,15 @@ class MCPClient:
             MCPResourceReadResult,
         ):
             return result
-        self._fail_protocol(
-            f"MCP {operation} returned an invalid result."
-        )
+        self._fail_protocol(f"MCP {operation} returned an invalid result.")
 
     def _pending_continuation(
         self,
         continuation: object,
     ) -> _PendingContinuation:
         if not isinstance(continuation, MCPContinuation):
-            raise MCPContinuationError(
-                "MCP continuation is invalid."
-            )
-        pending = self._pending_continuations.get(
-            continuation.continuation_id
-        )
+            raise MCPContinuationError("MCP continuation is invalid.")
+        pending = self._pending_continuations.get(continuation.continuation_id)
         if pending is None or pending.continuation is not continuation:
             raise MCPContinuationError(
                 "MCP continuation is unknown or already consumed."
@@ -535,24 +487,16 @@ class MCPClient:
             not in self._context.client_capabilities
         }
         if missing:
-            self._fail_protocol(
-                "MCP server requested an undeclared client capability."
-            )
+            self._fail_protocol("MCP server requested an undeclared client capability.")
 
     def _require_open(self) -> None:
         if self._state is not MCPConnectionState.OPEN:
-            raise MCPLifecycleError(
-                "MCP client operation requires an open transport."
-            )
+            raise MCPLifecycleError("MCP client operation requires an open transport.")
 
     @staticmethod
     def _validate_cursor(cursor: str | None) -> None:
-        if cursor is not None and (
-            not isinstance(cursor, str) or not cursor.strip()
-        ):
-            raise MCPValidationError(
-                "MCP cursor must be a non-empty string."
-            )
+        if cursor is not None and (not isinstance(cursor, str) or not cursor.strip()):
+            raise MCPValidationError("MCP cursor must be a non-empty string.")
 
     def _fail_protocol(self, message: str) -> None:
         self._abort()

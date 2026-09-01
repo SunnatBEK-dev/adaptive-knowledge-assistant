@@ -1,11 +1,11 @@
 import json
 from pathlib import Path
+from typing import Any
 
 from ai_sdk.config import EMBEDDINGS_FILE
 
 
 class EmbeddingCache:
-
     def __init__(
         self,
         file_path: Path = EMBEDDINGS_FILE,
@@ -28,12 +28,12 @@ class EmbeddingCache:
     def set(
         self,
         message_id: str,
-        vector,
+        vector: Any,
     ) -> None:
         if hasattr(vector, "tolist"):
             vector = vector.tolist()
 
-        self.cache[message_id] = vector
+        self.cache[message_id] = [float(value) for value in vector]
 
     def delete(
         self,
@@ -84,7 +84,5 @@ class EmbeddingCache:
                 self.cache = {}
 
         except json.JSONDecodeError as e:
-            print(
-                f"Embedding cache parsing failed: {e}"
-            )
+            print(f"Embedding cache parsing failed: {e}")
             self.cache = {}

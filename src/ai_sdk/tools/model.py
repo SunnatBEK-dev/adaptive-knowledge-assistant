@@ -7,9 +7,7 @@ class ToolHandlerError(RuntimeError):
 
     def __init__(self, content: str) -> None:
         if not isinstance(content, str) or not content.strip():
-            raise ValueError(
-                "Tool handler error content cannot be empty."
-            )
+            raise ValueError("Tool handler error content cannot be empty.")
         self.content = content
         super().__init__(content)
 
@@ -33,9 +31,7 @@ class ToolCall:
             raise ValueError("Tool call name cannot be empty.")
 
         if not isinstance(arguments, Mapping):
-            raise ValueError(
-                "Tool call arguments must be an object."
-            )
+            raise ValueError("Tool call arguments must be an object.")
 
         object.__setattr__(self, "id", id)
         object.__setattr__(self, "name", name)

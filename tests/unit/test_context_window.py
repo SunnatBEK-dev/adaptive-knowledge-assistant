@@ -68,9 +68,7 @@ def test_window_always_keeps_latest_turn_when_it_exceeds_budget():
 
 
 def test_window_returns_copies_without_mutating_input():
-    messages = [
-        {"role": "user", "content": "Question"}
-    ]
+    messages = [{"role": "user", "content": "Question"}]
     selected = SlidingContextWindow(
         max_tokens=10,
         message_overhead=0,

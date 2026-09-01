@@ -1,10 +1,5 @@
 import pytest
 
-from ai_sdk.observability import (
-    InMemoryTraceCollector,
-    TraceStatus,
-    Tracer,
-)
 from ai_sdk.mcp import (
     CLIENT_CAPABILITIES_META_KEY,
     CLIENT_INFO_META_KEY,
@@ -14,9 +9,9 @@ from ai_sdk.mcp import (
     MCPCapabilityError,
     MCPClient,
     MCPConnectionState,
+    MCPContentBlock,
     MCPContinuation,
     MCPContinuationError,
-    MCPContentBlock,
     MCPDiscoveryResult,
     MCPImplementation,
     MCPInputRequest,
@@ -37,6 +32,11 @@ from ai_sdk.mcp import (
     MCPToolResult,
     MCPTransportError,
     MCPValidationError,
+)
+from ai_sdk.observability import (
+    InMemoryTraceCollector,
+    Tracer,
+    TraceStatus,
 )
 
 
@@ -65,9 +65,7 @@ class RecordingTransport(BaseMCPTransport):
                 MCPResource("file:///a.txt", "a.txt"),
             ]
         )
-        self.tool_result = MCPToolResult(
-            [MCPContentBlock.text("remote result")]
-        )
+        self.tool_result = MCPToolResult([MCPContentBlock.text("remote result")])
         self.resource_read_result = MCPResourceReadResult(
             [
                 MCPResourceContent(
@@ -92,9 +90,7 @@ class RecordingTransport(BaseMCPTransport):
         return self.discovery_result
 
     def list_tools(self, context, *, cursor, timeout_seconds):
-        self.calls.append(
-            ("list_tools", context, cursor, timeout_seconds)
-        )
+        self.calls.append(("list_tools", context, cursor, timeout_seconds))
         if isinstance(self.tools_result, BaseException):
             raise self.tools_result
         return self.tools_result
@@ -106,9 +102,7 @@ class RecordingTransport(BaseMCPTransport):
         cursor,
         timeout_seconds,
     ):
-        self.calls.append(
-            ("list_resources", context, cursor, timeout_seconds)
-        )
+        self.calls.append(("list_resources", context, cursor, timeout_seconds))
         if isinstance(self.resources_result, BaseException):
             raise self.resources_result
         return self.resources_result
@@ -120,9 +114,7 @@ class RecordingTransport(BaseMCPTransport):
         *,
         timeout_seconds,
     ):
-        self.calls.append(
-            ("call_tool", context, request, timeout_seconds)
-        )
+        self.calls.append(("call_tool", context, request, timeout_seconds))
         if isinstance(self.tool_result, BaseException):
             raise self.tool_result
         return self.tool_result
@@ -134,9 +126,7 @@ class RecordingTransport(BaseMCPTransport):
         *,
         timeout_seconds,
     ):
-        self.calls.append(
-            ("read_resource", context, request, timeout_seconds)
-        )
+        self.calls.append(("read_resource", context, request, timeout_seconds))
         if isinstance(self.resource_read_result, BaseException):
             raise self.resource_read_result
         return self.resource_read_result
@@ -171,9 +161,7 @@ def input_required(
                     "message": "Continue?",
                     "requestedSchema": {
                         "type": "object",
-                        "properties": {
-                            "approved": {"type": "boolean"}
-                        },
+                        "properties": {"approved": {"type": "boolean"}},
                     },
                 },
             )
@@ -200,9 +188,7 @@ def test_request_context_exports_required_stateless_metadata():
             "name": "client",
             "version": "1.2.3",
         },
-        CLIENT_CAPABILITIES_META_KEY: {
-            "sampling": {"enabled": False}
-        },
+        CLIENT_CAPABILITIES_META_KEY: {"sampling": {"enabled": False}},
     }
 
 
@@ -232,9 +218,7 @@ def test_explicit_discovery_validates_version_and_keeps_server_info():
         "1.0",
     )
     assert context is client.request_context
-    assert context.to_meta()[PROTOCOL_VERSION_META_KEY] == (
-        MCP_PROTOCOL_VERSION
-    )
+    assert context.to_meta()[PROTOCOL_VERSION_META_KEY] == (MCP_PROTOCOL_VERSION)
     assert timeout == 2.5
 
 
@@ -764,9 +748,7 @@ def test_resource_rejects_invalid_fields(uri, name, size, message):
             [MCPContentBlock.text("result")],
             is_error="yes",
         ),
-        lambda: MCPToolResult(
-            structured_content=float("nan")
-        ),
+        lambda: MCPToolResult(structured_content=float("nan")),
         lambda: MCPToolRequest(
             "tool",
             input_responses={"": {}},
@@ -843,14 +825,10 @@ def test_tool_input_required_is_manual_and_retry_echoes_state_once():
     assert isinstance(continuation, MCPContinuation)
     assert continuation.operation == "tools/call"
     assert continuation.round == 1
-    assert continuation.input_requests["confirm"].method == (
-        "elicitation/create"
-    )
+    assert continuation.input_requests["confirm"].method == ("elicitation/create")
     assert not hasattr(continuation, "request_state")
 
-    transport.tool_result = MCPToolResult(
-        [MCPContentBlock.text("deleted")]
-    )
+    transport.tool_result = MCPToolResult([MCPContentBlock.text("deleted")])
     responses = {
         "confirm": {
             "action": "accept",
@@ -907,9 +885,7 @@ def test_continuation_requires_exact_keys_and_can_be_cancelled():
 
 def test_state_only_continuation_retries_resource_without_responses():
     transport = RecordingTransport()
-    transport.resource_read_result = MCPInputRequiredResult(
-        request_state="state-only"
-    )
+    transport.resource_read_result = MCPInputRequiredResult(request_state="state-only")
     client = make_client(transport)
     client.open()
     continuation = client.read_resource("file:///large.txt")

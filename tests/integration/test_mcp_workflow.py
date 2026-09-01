@@ -52,18 +52,14 @@ class InMemoryMCPTransport(BaseMCPTransport):
                         "search_docs",
                         {
                             "type": "object",
-                            "properties": {
-                                "query": {"type": "string"}
-                            },
+                            "properties": {"query": {"type": "string"}},
                             "required": ["query"],
                         },
                     )
                 ],
                 next_cursor="page-2",
             )
-        return MCPToolPage(
-            [MCPTool("health-check", {"type": "object"})]
-        )
+        return MCPToolPage([MCPTool("health-check", {"type": "object"})])
 
     def list_resources(
         self,
@@ -142,9 +138,7 @@ def test_stateless_mcp_discovery_and_catalog_workflow():
     with client:
         discovery = client.discover()
         first_tools = client.list_tools()
-        second_tools = client.list_tools(
-            cursor=first_tools.next_cursor
-        )
+        second_tools = client.list_tools(cursor=first_tools.next_cursor)
         resources = client.list_resources()
         registry = ToolRegistry()
         registered = MCPToolAdapter(client).register_approved(
@@ -159,17 +153,13 @@ def test_stateless_mcp_discovery_and_catalog_workflow():
                 {"query": "Python"},
             )
         )
-        resource_result = client.read_resource(
-            resources.resources[0].uri
-        )
+        resource_result = client.read_resource(resources.resources[0].uri)
 
         assert discovery.capabilities.supports_tools
         assert discovery.capabilities.supports_resources
         assert first_tools.tools[0].name == "search_docs"
         assert second_tools.tools[0].name == "health-check"
-        assert resources.resources[0].uri == (
-            "file:///knowledge/python.md"
-        )
+        assert resources.resources[0].uri == ("file:///knowledge/python.md")
         assert registered == ("search_docs",)
         assert registry.count() == 1
         assert tool_result.content == "Found Python guide."
@@ -180,8 +170,7 @@ def test_stateless_mcp_discovery_and_catalog_workflow():
     assert not transport.is_open
     assert len(transport.received_meta) == 6
     assert all(
-        meta["io.modelcontextprotocol/protocolVersion"]
-        == MCP_PROTOCOL_VERSION
+        meta["io.modelcontextprotocol/protocolVersion"] == MCP_PROTOCOL_VERSION
         for meta in transport.received_meta
     )
     assert all(

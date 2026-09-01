@@ -1,7 +1,7 @@
-from base64 import b64encode
-from collections.abc import Callable, Mapping, Sequence
 import json
 import re
+from base64 import b64encode
+from collections.abc import Callable, Mapping, Sequence
 from threading import Lock
 from typing import BinaryIO
 from urllib.error import HTTPError, URLError
@@ -36,12 +36,9 @@ from ai_sdk.mcp.transport import (
     MCPTransportResponseError,
 )
 
-
 AuthorizationProvider = Callable[[], str | None]
 
-_HEADER_TOKEN_PATTERN = re.compile(
-    r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$"
-)
+_HEADER_TOKEN_PATTERN = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
 _BASE64_SENTINEL_PATTERN = re.compile(
     r"^=\?base64\?.*\?=$",
     re.DOTALL,
@@ -71,20 +68,14 @@ class StreamableHTTPTransport(BaseMCPTransport):
         opener: OpenerDirector | None = None,
     ) -> None:
         self._endpoint = self._validate_endpoint(endpoint)
-        if authorization_provider is not None and not callable(
-            authorization_provider
-        ):
-            raise MCPHTTPError(
-                "MCP authorization provider must be callable."
-            )
+        if authorization_provider is not None and not callable(authorization_provider):
+            raise MCPHTTPError("MCP authorization provider must be callable.")
         if (
             not isinstance(max_response_bytes, int)
             or isinstance(max_response_bytes, bool)
             or max_response_bytes <= 0
         ):
-            raise MCPHTTPError(
-                "MCP maximum response size must be greater than zero."
-            )
+            raise MCPHTTPError("MCP maximum response size must be greater than zero.")
         if opener is not None and not hasattr(opener, "open"):
             raise MCPHTTPError("MCP HTTP opener is invalid.")
 
@@ -238,9 +229,7 @@ class StreamableHTTPTransport(BaseMCPTransport):
                 separators=(",", ":"),
             ).encode("utf-8")
         except (TypeError, ValueError) as error:
-            raise MCPHTTPError(
-                "MCP HTTP request body is not valid JSON."
-            ) from error
+            raise MCPHTTPError("MCP HTTP request body is not valid JSON.") from error
 
         headers = {
             "Accept": "application/json, text/event-stream",
@@ -277,18 +266,13 @@ class StreamableHTTPTransport(BaseMCPTransport):
                 )
         except URLError as error:
             if isinstance(error.reason, TimeoutError):
-                raise TimeoutError(
-                    "MCP HTTP request timed out."
-                ) from error
-            raise MCPHTTPError(
-                "MCP HTTP request failed: URLError"
-            ) from error
+                raise TimeoutError("MCP HTTP request timed out.") from error
+            raise MCPHTTPError("MCP HTTP request failed: URLError") from error
         except TimeoutError:
             raise
         except Exception as error:
             raise MCPHTTPError(
-                "MCP HTTP request failed: "
-                f"{type(error).__name__}"
+                f"MCP HTTP request failed: {type(error).__name__}"
             ) from error
 
         with response:
@@ -310,9 +294,7 @@ class StreamableHTTPTransport(BaseMCPTransport):
     ) -> Mapping[str, object] | MCPInputRequiredResult:
         raw = response.read(self._max_response_bytes + 1)
         if len(raw) > self._max_response_bytes:
-            raise MCPHTTPError(
-                "MCP HTTP response exceeded the configured size limit."
-            )
+            raise MCPHTTPError("MCP HTTP response exceeded the configured size limit.")
 
         content_type = self._response_content_type(response)
         if status != 200:
@@ -328,9 +310,7 @@ class StreamableHTTPTransport(BaseMCPTransport):
                     raise
                 except Exception:
                     pass
-            raise MCPHTTPError(
-                f"MCP HTTP request failed with status {status}."
-            )
+            raise MCPHTTPError(f"MCP HTTP request failed with status {status}.")
 
         if content_type == "application/json":
             message = self._decode_json(raw)
@@ -345,18 +325,14 @@ class StreamableHTTPTransport(BaseMCPTransport):
                 request_id,
                 allow_input_required=allow_input_required,
             )
-        raise MCPHTTPError(
-            "MCP HTTP response content type is unsupported."
-        )
+        raise MCPHTTPError("MCP HTTP response content type is unsupported.")
 
     @staticmethod
     def _decode_json(raw: bytes) -> object:
         try:
             return json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as error:
-            raise MCPHTTPError(
-                "MCP HTTP response is not valid UTF-8 JSON."
-            ) from error
+            raise MCPHTTPError("MCP HTTP response is not valid UTF-8 JSON.") from error
 
     def _decode_sse(
         self,
@@ -368,34 +344,24 @@ class StreamableHTTPTransport(BaseMCPTransport):
         try:
             text = raw.decode("utf-8")
         except UnicodeDecodeError as error:
-            raise MCPHTTPError(
-                "MCP SSE response is not valid UTF-8."
-            ) from error
+            raise MCPHTTPError("MCP SSE response is not valid UTF-8.") from error
 
-        final_result: (
-            Mapping[str, object] | MCPInputRequiredResult | None
-        ) = None
+        final_result: Mapping[str, object] | MCPInputRequiredResult | None = None
         for data in self._sse_data_events(text):
             message = self._decode_json(data.encode("utf-8"))
             if final_result is not None:
-                raise MCPHTTPError(
-                    "MCP SSE stream continued after its final response."
-                )
+                raise MCPHTTPError("MCP SSE stream continued after its final response.")
             if self._is_notification(message):
                 continue
             if self._is_server_request(message):
-                raise MCPHTTPError(
-                    "MCP SSE stream contained a server request."
-                )
+                raise MCPHTTPError("MCP SSE stream contained a server request.")
             final_result = self._parse_envelope(
                 message,
                 request_id,
                 allow_input_required=allow_input_required,
             )
         if final_result is None:
-            raise MCPHTTPError(
-                "MCP SSE stream ended without a final response."
-            )
+            raise MCPHTTPError("MCP SSE stream ended without a final response.")
         return final_result
 
     @staticmethod
@@ -444,32 +410,22 @@ class StreamableHTTPTransport(BaseMCPTransport):
         allow_input_required: bool,
     ) -> Mapping[str, object] | MCPInputRequiredResult:
         if not isinstance(message, Mapping):
-            raise MCPHTTPError(
-                "MCP JSON-RPC response must be an object."
-            )
+            raise MCPHTTPError("MCP JSON-RPC response must be an object.")
         if message.get("jsonrpc") != "2.0":
-            raise MCPHTTPError(
-                "MCP JSON-RPC version is invalid."
-            )
+            raise MCPHTTPError("MCP JSON-RPC version is invalid.")
         if message.get("id") != request_id or isinstance(
             message.get("id"),
             bool,
         ):
-            raise MCPHTTPError(
-                "MCP JSON-RPC response ID does not match the request."
-            )
+            raise MCPHTTPError("MCP JSON-RPC response ID does not match the request.")
         has_result = "result" in message
         has_error = "error" in message
         if has_result == has_error:
-            raise MCPHTTPError(
-                "MCP JSON-RPC response must contain result or error."
-            )
+            raise MCPHTTPError("MCP JSON-RPC response must contain result or error.")
         if has_error:
             error = message["error"]
             if not isinstance(error, Mapping):
-                raise MCPHTTPError(
-                    "MCP JSON-RPC error is invalid."
-                )
+                raise MCPHTTPError("MCP JSON-RPC error is invalid.")
             code = error.get("code")
             remote_message = error.get("message")
             if (
@@ -478,31 +434,21 @@ class StreamableHTTPTransport(BaseMCPTransport):
                 or not isinstance(remote_message, str)
                 or not remote_message.strip()
             ):
-                raise MCPHTTPError(
-                    "MCP JSON-RPC error is invalid."
-                )
+                raise MCPHTTPError("MCP JSON-RPC error is invalid.")
             raise MCPTransportResponseError(code, remote_message)
 
         result = message["result"]
         if not isinstance(result, Mapping):
-            raise MCPHTTPError(
-                "MCP JSON-RPC result must be an object."
-            )
+            raise MCPHTTPError("MCP JSON-RPC result must be an object.")
         result_type = result.get("resultType", "complete")
         if result_type == "input_required":
             if not allow_input_required:
                 raise MCPHTTPError(
-                    "MCP input_required result is unsupported for this "
-                    "operation."
+                    "MCP input_required result is unsupported for this operation."
                 )
-            return StreamableHTTPTransport._parse_input_required(
-                result
-            )
+            return StreamableHTTPTransport._parse_input_required(result)
         if result_type != "complete":
-            raise MCPHTTPError(
-                "MCP result type is unsupported: "
-                f"{result_type}."
-            )
+            raise MCPHTTPError(f"MCP result type is unsupported: {result_type}.")
         return result
 
     @staticmethod
@@ -513,9 +459,7 @@ class StreamableHTTPTransport(BaseMCPTransport):
         requests: dict[str, MCPInputRequest] = {}
         if "inputRequests" in result:
             if not isinstance(raw_requests, Mapping):
-                raise MCPHTTPError(
-                    "MCP inputRequests must be an object."
-                )
+                raise MCPHTTPError("MCP inputRequests must be an object.")
             for key, raw_request in raw_requests.items():
                 if (
                     not isinstance(key, str)
@@ -523,9 +467,7 @@ class StreamableHTTPTransport(BaseMCPTransport):
                     or not isinstance(raw_request, Mapping)
                     or not isinstance(raw_request.get("params"), Mapping)
                 ):
-                    raise MCPHTTPError(
-                        "MCP inputRequests contains an invalid request."
-                    )
+                    raise MCPHTTPError("MCP inputRequests contains an invalid request.")
                 try:
                     requests[key] = MCPInputRequest(
                         raw_request.get("method"),
@@ -540,9 +482,7 @@ class StreamableHTTPTransport(BaseMCPTransport):
             request_state,
             str,
         ):
-            raise MCPHTTPError(
-                "MCP requestState must be an opaque string."
-            )
+            raise MCPHTTPError("MCP requestState must be an opaque string.")
         return MCPInputRequiredResult(
             requests,
             request_state=request_state,
@@ -554,13 +494,15 @@ class StreamableHTTPTransport(BaseMCPTransport):
     ) -> MCPDiscoveryResult:
         supported = result.get("supportedVersions")
         capabilities = result.get("capabilities")
-        if not isinstance(supported, Sequence) or isinstance(
-            supported,
-            (str, bytes),
-        ) or not isinstance(capabilities, Mapping):
-            raise MCPHTTPError(
-                "MCP discovery result is invalid."
+        if (
+            not isinstance(supported, Sequence)
+            or isinstance(
+                supported,
+                (str, bytes),
             )
+            or not isinstance(capabilities, Mapping)
+        ):
+            raise MCPHTTPError("MCP discovery result is invalid.")
         tools = StreamableHTTPTransport._capability(
             capabilities,
             "tools",
@@ -590,9 +532,7 @@ class StreamableHTTPTransport(BaseMCPTransport):
             return None
         value = capabilities[name]
         if not isinstance(value, Mapping):
-            raise MCPHTTPError(
-                f"MCP {name} capability is invalid."
-            )
+            raise MCPHTTPError(f"MCP {name} capability is invalid.")
         return value
 
     @staticmethod
@@ -641,14 +581,10 @@ class StreamableHTTPTransport(BaseMCPTransport):
     @staticmethod
     def _parse_tool(raw: object) -> MCPTool:
         if not isinstance(raw, Mapping):
-            raise MCPHTTPError(
-                "MCP tools/list contains an invalid tool."
-            )
+            raise MCPHTTPError("MCP tools/list contains an invalid tool.")
         schema = raw.get("inputSchema")
         if not isinstance(schema, Mapping):
-            raise MCPHTTPError(
-                "MCP tool input schema is invalid."
-            )
+            raise MCPHTTPError("MCP tool input schema is invalid.")
         return MCPTool(
             raw.get("name"),
             schema,
@@ -665,14 +601,9 @@ class StreamableHTTPTransport(BaseMCPTransport):
             raw_resources,
             (str, bytes),
         ):
-            raise MCPHTTPError(
-                "MCP resources/list result is invalid."
-            )
+            raise MCPHTTPError("MCP resources/list result is invalid.")
         return MCPResourcePage(
-            [
-                StreamableHTTPTransport._parse_resource(raw)
-                for raw in raw_resources
-            ],
+            [StreamableHTTPTransport._parse_resource(raw) for raw in raw_resources],
             next_cursor=result.get("nextCursor"),
             ttl_ms=result.get("ttlMs"),
             cache_scope=result.get("cacheScope"),
@@ -681,9 +612,7 @@ class StreamableHTTPTransport(BaseMCPTransport):
     @staticmethod
     def _parse_resource(raw: object) -> MCPResource:
         if not isinstance(raw, Mapping):
-            raise MCPHTTPError(
-                "MCP resources/list contains an invalid resource."
-            )
+            raise MCPHTTPError("MCP resources/list contains an invalid resource.")
         return MCPResource(
             raw.get("uri"),
             raw.get("name"),
@@ -704,8 +633,7 @@ class StreamableHTTPTransport(BaseMCPTransport):
         ):
             raise MCPHTTPError("MCP tools/call result is invalid.")
         blocks = [
-            StreamableHTTPTransport._parse_content_block(raw)
-            for raw in raw_content
+            StreamableHTTPTransport._parse_content_block(raw) for raw in raw_content
         ]
         is_error = result.get("isError", False)
         if "structuredContent" in result:
@@ -719,14 +647,10 @@ class StreamableHTTPTransport(BaseMCPTransport):
     @staticmethod
     def _parse_content_block(raw: object) -> MCPContentBlock:
         if not isinstance(raw, Mapping):
-            raise MCPHTTPError(
-                "MCP tool result content block is invalid."
-            )
+            raise MCPHTTPError("MCP tool result content block is invalid.")
         content_type = raw.get("type")
         if not isinstance(content_type, str):
-            raise MCPHTTPError(
-                "MCP tool result content type is invalid."
-            )
+            raise MCPHTTPError("MCP tool result content type is invalid.")
         return MCPContentBlock(
             content_type,
             {key: value for key, value in raw.items() if key != "type"},
@@ -741,9 +665,7 @@ class StreamableHTTPTransport(BaseMCPTransport):
             raw_contents,
             (str, bytes),
         ):
-            raise MCPHTTPError(
-                "MCP resources/read result is invalid."
-            )
+            raise MCPHTTPError("MCP resources/read result is invalid.")
         return MCPResourceReadResult(
             [
                 StreamableHTTPTransport._parse_resource_content(raw)
@@ -756,9 +678,7 @@ class StreamableHTTPTransport(BaseMCPTransport):
     @staticmethod
     def _parse_resource_content(raw: object) -> MCPResourceContent:
         if not isinstance(raw, Mapping):
-            raise MCPHTTPError(
-                "MCP resource content is invalid."
-            )
+            raise MCPHTTPError("MCP resource content is invalid.")
         return MCPResourceContent(
             raw.get("uri"),
             mime_type=raw.get("mimeType"),
@@ -783,9 +703,7 @@ class StreamableHTTPTransport(BaseMCPTransport):
                 value,
                 value_type,
             )
-            headers[f"Mcp-Param-{header_name}"] = (
-                self._encode_header_value(encoded)
-            )
+            headers[f"Mcp-Param-{header_name}"] = self._encode_header_value(encoded)
         return headers
 
     @staticmethod
@@ -806,46 +724,31 @@ class StreamableHTTPTransport(BaseMCPTransport):
                 if (
                     not property_node
                     or not isinstance(header_name, str)
-                    or _HEADER_TOKEN_PATTERN.fullmatch(header_name)
-                    is None
+                    or _HEADER_TOKEN_PATTERN.fullmatch(header_name) is None
                     or value_type not in {"string", "integer", "boolean"}
                 ):
-                    raise MCPHTTPError(
-                        "MCP x-mcp-header annotation is invalid."
-                    )
+                    raise MCPHTTPError("MCP x-mcp-header annotation is invalid.")
                 specs.append((header_name, path, value_type))
 
             for key, value in node.items():
                 if key in {"x-mcp-header", "properties"}:
                     continue
-                if StreamableHTTPTransport._contains_header_annotation(
-                    value
-                ):
-                    raise MCPHTTPError(
-                        "MCP x-mcp-header annotation is unreachable."
-                    )
+                if StreamableHTTPTransport._contains_header_annotation(value):
+                    raise MCPHTTPError("MCP x-mcp-header annotation is unreachable.")
             properties = node.get("properties")
             if properties is None:
                 return
             if not isinstance(properties, Mapping):
-                if StreamableHTTPTransport._contains_header_annotation(
-                    properties
-                ):
-                    raise MCPHTTPError(
-                        "MCP x-mcp-header annotation is unreachable."
-                    )
+                if StreamableHTTPTransport._contains_header_annotation(properties):
+                    raise MCPHTTPError("MCP x-mcp-header annotation is unreachable.")
                 return
             for name, child in properties.items():
                 if not isinstance(name, str) or not isinstance(
                     child,
                     Mapping,
                 ):
-                    if StreamableHTTPTransport._contains_header_annotation(
-                        child
-                    ):
-                        raise MCPHTTPError(
-                            "MCP x-mcp-header annotation is invalid."
-                        )
+                    if StreamableHTTPTransport._contains_header_annotation(child):
+                        raise MCPHTTPError("MCP x-mcp-header annotation is invalid.")
                     continue
                 visit(
                     child,
@@ -856,18 +759,14 @@ class StreamableHTTPTransport(BaseMCPTransport):
         visit(tool.input_schema, (), property_node=False)
         normalized_names = [name.casefold() for name, _, _ in specs]
         if len(normalized_names) != len(set(normalized_names)):
-            raise MCPHTTPError(
-                "MCP x-mcp-header names must be unique."
-            )
+            raise MCPHTTPError("MCP x-mcp-header names must be unique.")
         return tuple(specs)
 
     @staticmethod
     def _contains_header_annotation(value: object) -> bool:
         if isinstance(value, Mapping):
             return "x-mcp-header" in value or any(
-                StreamableHTTPTransport._contains_header_annotation(
-                    child
-                )
+                StreamableHTTPTransport._contains_header_annotation(child)
                 for child in value.values()
             )
         if isinstance(value, Sequence) and not isinstance(
@@ -875,9 +774,7 @@ class StreamableHTTPTransport(BaseMCPTransport):
             (str, bytes),
         ):
             return any(
-                StreamableHTTPTransport._contains_header_annotation(
-                    child
-                )
+                StreamableHTTPTransport._contains_header_annotation(child)
                 for child in value
             )
         return False
@@ -907,9 +804,7 @@ class StreamableHTTPTransport(BaseMCPTransport):
             and -_MAX_SAFE_INTEGER <= value <= _MAX_SAFE_INTEGER
         ):
             return str(value)
-        raise MCPHTTPError(
-            "MCP header-mirrored tool argument has an invalid value."
-        )
+        raise MCPHTTPError("MCP header-mirrored tool argument has an invalid value.")
 
     def _authorization(self) -> str | None:
         if self._authorization_provider is None:
@@ -918,15 +813,12 @@ class StreamableHTTPTransport(BaseMCPTransport):
             value = self._authorization_provider()
         except Exception as error:
             raise MCPHTTPError(
-                "MCP authorization provider failed: "
-                f"{type(error).__name__}"
+                f"MCP authorization provider failed: {type(error).__name__}"
             ) from error
         if value is None:
             return None
         if not isinstance(value, str) or not self._plain_header_safe(value):
-            raise MCPHTTPError(
-                "MCP authorization value is not header-safe."
-            )
+            raise MCPHTTPError("MCP authorization value is not header-safe.")
         return value
 
     @staticmethod
@@ -981,7 +873,8 @@ class StreamableHTTPTransport(BaseMCPTransport):
             or parsed.username is not None
             or parsed.password is not None
             or parsed.fragment
-            or port is not None and not 0 < port <= 65535
+            or port is not None
+            and not 0 < port <= 65535
         ):
             raise MCPHTTPError("MCP HTTP endpoint is invalid.")
         return endpoint

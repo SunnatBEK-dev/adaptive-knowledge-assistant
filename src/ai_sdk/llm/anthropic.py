@@ -19,12 +19,7 @@ from ai_sdk.tools.model import ToolCall
 from ai_sdk.tools.schema import ToolSchema
 
 
-API_KEY = ANTHROPIC_API_KEY
-MODEL = ANTHROPIC_MODEL
-
-
-class ClaudeClient(BaseToolLLMClient):
-
+class AnthropicClient(BaseToolLLMClient):
     def __init__(
         self,
         client: Anthropic | None = None,
@@ -34,24 +29,20 @@ class ClaudeClient(BaseToolLLMClient):
         max_tokens: int = MAX_TOKENS,
         timeout: float = TIMEOUT,
     ) -> None:
-        self.model = model or MODEL
+        self.model = model or ANTHROPIC_MODEL
         self.max_tokens = max_tokens
 
         if not self.model:
-            raise RuntimeError(
-                "ANTHROPIC_MODEL or MODEL is not configured."
-            )
+            raise RuntimeError("ANTHROPIC_MODEL or MODEL is not configured.")
 
         if client is not None:
             self.client = client
             return
 
-        resolved_api_key = api_key or API_KEY
+        resolved_api_key = api_key or ANTHROPIC_API_KEY
 
         if not resolved_api_key:
-            raise RuntimeError(
-                "ANTHROPIC_API_KEY is not configured."
-            )
+            raise RuntimeError("ANTHROPIC_API_KEY is not configured.")
 
         self.client = Anthropic(
             api_key=resolved_api_key,
@@ -93,24 +84,26 @@ class ClaudeClient(BaseToolLLMClient):
         ]
 
         for event in events:
-            provider_messages.append({
-                "role": "assistant",
-                "content": self._assistant_blocks(
-                    event.response
-                ),
-            })
-            provider_messages.append({
-                "role": "user",
-                "content": [
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": result.call_id,
-                        "content": result.content,
-                        "is_error": result.is_error,
-                    }
-                    for result in event.tool_results
-                ],
-            })
+            provider_messages.append(
+                {
+                    "role": "assistant",
+                    "content": self._assistant_blocks(event.response),
+                }
+            )
+            provider_messages.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": result.call_id,
+                            "content": result.content,
+                            "is_error": result.is_error,
+                        }
+                        for result in event.tool_results
+                    ],
+                }
+            )
 
         request: dict[str, object] = {
             "model": self.model,
@@ -119,10 +112,7 @@ class ClaudeClient(BaseToolLLMClient):
         }
 
         if schemas:
-            request["tools"] = [
-                schema.to_json_schema()
-                for schema in schemas
-            ]
+            request["tools"] = [schema.to_json_schema() for schema in schemas]
 
         response = self.client.messages.create(**request)
         parsed = self._parse_agent_response(response.content)
@@ -131,9 +121,7 @@ class ClaudeClient(BaseToolLLMClient):
             getattr(response, "stop_reason", None) == "tool_use"
             and not parsed.tool_calls
         ):
-            raise RuntimeError(
-                "Claude returned tool_use without a tool call."
-            )
+            raise RuntimeError("Claude returned tool_use without a tool call.")
 
         return parsed
 
@@ -145,17 +133,21 @@ class ClaudeClient(BaseToolLLMClient):
 
         for block in response.blocks:
             if isinstance(block, AgentTextBlock):
-                blocks.append({
-                    "type": "text",
-                    "text": block.text,
-                })
+                blocks.append(
+                    {
+                        "type": "text",
+                        "text": block.text,
+                    }
+                )
             else:
-                blocks.append({
-                    "type": "tool_use",
-                    "id": block.id,
-                    "name": block.name,
-                    "input": block.arguments,
-                })
+                blocks.append(
+                    {
+                        "type": "tool_use",
+                        "id": block.id,
+                        "name": block.name,
+                        "input": block.arguments,
+                    }
+                )
 
         return blocks
 
@@ -164,9 +156,7 @@ class ClaudeClient(BaseToolLLMClient):
         blocks: object,
     ) -> AgentModelResponse:
         if not isinstance(blocks, list):
-            raise RuntimeError(
-                "Claude response content must be a list."
-            )
+            raise RuntimeError("Claude response content must be a list.")
 
         parsed_blocks: list[AgentTextBlock | ToolCall] = []
 
@@ -177,9 +167,7 @@ class ClaudeClient(BaseToolLLMClient):
                 text = getattr(block, "text", None)
 
                 if not isinstance(text, str):
-                    raise RuntimeError(
-                        "Claude text block is invalid."
-                    )
+                    raise RuntimeError("Claude text block is invalid.")
 
                 parsed_blocks.append(AgentTextBlock(text))
                 continue
@@ -192,9 +180,7 @@ class ClaudeClient(BaseToolLLMClient):
                         arguments=getattr(block, "input", None),
                     )
                 except (TypeError, ValueError) as error:
-                    raise RuntimeError(
-                        "Claude tool-use block is invalid."
-                    ) from error
+                    raise RuntimeError("Claude tool-use block is invalid.") from error
 
                 parsed_blocks.append(call)
 
@@ -209,6 +195,5 @@ class ClaudeClient(BaseToolLLMClient):
             max_tokens=self.max_tokens,
             messages=messages,
         ) as stream:
-
             for text in stream.text_stream:
                 yield text

@@ -91,9 +91,11 @@ def build_add_executor(handler=lambda left, right: left + right):
 
 
 def test_ask_uses_responses_api_with_provider_configuration():
-    provider = FakeOpenAI([
-        response(output_text="Hello world"),
-    ])
+    provider = FakeOpenAI(
+        [
+            response(output_text="Hello world"),
+        ]
+    )
     client = OpenAIClient(
         client=provider,
         model="gpt-test",
@@ -104,12 +106,14 @@ def test_ask_uses_responses_api_with_provider_configuration():
     result = client.ask(messages)
 
     assert result == "Hello world"
-    assert provider.responses.create_calls == [{
-        "model": "gpt-test",
-        "max_output_tokens": 77,
-        "input": [{"role": "user", "content": "Hi"}],
-        "store": False,
-    }]
+    assert provider.responses.create_calls == [
+        {
+            "model": "gpt-test",
+            "max_output_tokens": 77,
+            "input": [{"role": "user", "content": "Hi"}],
+            "store": False,
+        }
+    ]
     assert messages == [{"role": "user", "content": "Hi"}]
 
 
@@ -129,62 +133,60 @@ def test_stream_yields_only_text_and_refusal_deltas():
     provider = FakeOpenAI([stream])
     client = OpenAIClient(client=provider, model="gpt-test")
 
-    chunks = list(client.stream([
-        {"role": "user", "content": "Hi"}
-    ]))
+    chunks = list(client.stream([{"role": "user", "content": "Hi"}]))
 
     assert chunks == ["one", "two"]
     assert provider.responses.create_calls[0]["stream"] is True
 
 
 def test_ask_with_tools_completes_openai_tool_loop():
-    provider = FakeOpenAI([
-        response(
-            message(text_block("I will calculate it.")),
-            function_call(
-                "call_1",
-                "add",
-                '{"left": 2, "right": 3}',
+    provider = FakeOpenAI(
+        [
+            response(
+                message(text_block("I will calculate it.")),
+                function_call(
+                    "call_1",
+                    "add",
+                    '{"left": 2, "right": 3}',
+                ),
             ),
-        ),
-        response(
-            message(text_block("The answer is 5.")),
-        ),
-    ])
+            response(
+                message(text_block("The answer is 5.")),
+            ),
+        ]
+    )
     executor = build_add_executor()
     client = OpenAIClient(client=provider, model="gpt-test")
-    messages = [
-        {"role": "user", "content": "What is 2 + 3?"}
-    ]
+    messages = [{"role": "user", "content": "What is 2 + 3?"}]
 
     result = client.ask_with_tools(messages, executor)
 
     assert result == "The answer is 5."
-    assert messages == [
-        {"role": "user", "content": "What is 2 + 3?"}
-    ]
+    assert messages == [{"role": "user", "content": "What is 2 + 3?"}]
     first_call, second_call = provider.responses.create_calls
-    assert first_call["tools"] == [{
-        "type": "function",
-        "name": "add",
-        "description": "Add two integers.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "left": {
-                    "type": "integer",
-                    "description": "First integer.",
+    assert first_call["tools"] == [
+        {
+            "type": "function",
+            "name": "add",
+            "description": "Add two integers.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "left": {
+                        "type": "integer",
+                        "description": "First integer.",
+                    },
+                    "right": {
+                        "type": "integer",
+                        "description": "Second integer.",
+                    },
                 },
-                "right": {
-                    "type": "integer",
-                    "description": "Second integer.",
-                },
+                "required": ["left", "right"],
+                "additionalProperties": False,
             },
-            "required": ["left", "right"],
-            "additionalProperties": False,
-        },
-        "strict": True,
-    }]
+            "strict": True,
+        }
+    ]
     assert second_call["input"] == [
         {"role": "user", "content": "What is 2 + 3?"},
         {"role": "assistant", "content": "I will calculate it."},
@@ -203,10 +205,12 @@ def test_ask_with_tools_completes_openai_tool_loop():
 
 
 def test_tool_errors_are_marked_in_openai_function_output():
-    provider = FakeOpenAI([
-        response(function_call("missing_1", "missing", "{}")),
-        response(message(text_block("Tool unavailable."))),
-    ])
+    provider = FakeOpenAI(
+        [
+            response(function_call("missing_1", "missing", "{}")),
+            response(message(text_block("Tool unavailable."))),
+        ]
+    )
     client = OpenAIClient(client=provider, model="gpt-test")
 
     result = client.ask_with_tools(
@@ -236,9 +240,11 @@ def test_optional_tool_parameters_disable_openai_strict_mode():
             )
         ],
     )
-    provider = FakeOpenAI([
-        response(message(text_block("No search needed."))),
-    ])
+    provider = FakeOpenAI(
+        [
+            response(message(text_block("No search needed."))),
+        ]
+    )
     client = OpenAIClient(client=provider, model="gpt-test")
 
     result = client.complete_tool_turn(
@@ -248,19 +254,19 @@ def test_optional_tool_parameters_disable_openai_strict_mode():
     )
 
     assert result.text == "No search needed."
-    assert provider.responses.create_calls[0]["tools"][0][
-        "strict"
-    ] is False
+    assert provider.responses.create_calls[0]["tools"][0]["strict"] is False
 
 
 def test_agent_response_preserves_refusal_and_ignores_unknown_items():
-    parsed = OpenAIClient._parse_agent_response([
-        SimpleNamespace(type="reasoning"),
-        message(
-            SimpleNamespace(type="annotation"),
-            refusal_block("Cannot help."),
-        ),
-    ])
+    parsed = OpenAIClient._parse_agent_response(
+        [
+            SimpleNamespace(type="reasoning"),
+            message(
+                SimpleNamespace(type="annotation"),
+                refusal_block("Cannot help."),
+            ),
+        ]
+    )
 
     assert parsed.text == "Cannot help."
     assert parsed.tool_calls == ()
@@ -282,9 +288,11 @@ def test_agent_response_rejects_malformed_provider_output(output):
 
 
 def test_ask_rejects_invalid_output_text():
-    provider = FakeOpenAI([
-        SimpleNamespace(output_text=None),
-    ])
+    provider = FakeOpenAI(
+        [
+            SimpleNamespace(output_text=None),
+        ]
+    )
     client = OpenAIClient(client=provider, model="gpt-test")
 
     with pytest.raises(RuntimeError, match="output text"):
@@ -292,12 +300,16 @@ def test_ask_rejects_invalid_output_text():
 
 
 def test_stream_rejects_invalid_text_delta():
-    provider = FakeOpenAI([[
-        SimpleNamespace(
-            type="response.output_text.delta",
-            delta=None,
-        )
-    ]])
+    provider = FakeOpenAI(
+        [
+            [
+                SimpleNamespace(
+                    type="response.output_text.delta",
+                    delta=None,
+                )
+            ]
+        ]
+    )
     client = OpenAIClient(client=provider, model="gpt-test")
 
     with pytest.raises(RuntimeError, match="delta"):

@@ -10,8 +10,8 @@ from ai_sdk.observability import (
     TraceCategory,
     Tracer,
 )
-from ai_sdk.retrieval.chunk import Chunk
 from ai_sdk.retrieval.catalog import IndexedDocument
+from ai_sdk.retrieval.chunk import Chunk
 from ai_sdk.retrieval.document import Document
 from ai_sdk.retrieval.search import SearchResult
 from ai_sdk.tools import ToolExecutor, ToolRegistry
@@ -77,20 +77,18 @@ class FakeRetriever:
     ):
         self.results = results or []
         self.error = error
-        self.documents = (
-            ["doc_rag"]
-            if documents is None
-            else list(documents)
-        )
+        self.documents = ["doc_rag"] if documents is None else list(documents)
         self.indexed = []
         self.deleted_documents = []
         self.queries = []
 
     def index_document(self, document_id, chunks):
-        self.indexed.append((
-            document_id,
-            list(chunks),
-        ))
+        self.indexed.append(
+            (
+                document_id,
+                list(chunks),
+            )
+        )
 
     def delete_document(self, document_id):
         self.deleted_documents.append(document_id)
@@ -128,7 +126,7 @@ def make_chunk() -> Chunk:
     )
 
 
-def build_manager(
+def create_rag_manager(
     *,
     retriever=None,
     chunker=None,
@@ -141,9 +139,7 @@ def build_manager(
     client = client or FakeClient()
     repository = FakeRepository()
     chunker = chunker or FakeChunker([make_chunk()])
-    retriever = retriever or FakeRetriever([
-        SearchResult(make_chunk(), 0.9)
-    ])
+    retriever = retriever or FakeRetriever([SearchResult(make_chunk(), 0.9)])
     manager = RAGConversationManager(
         conversation=conversation,
         prompt_builder=PromptBuilder(conversation),
@@ -169,7 +165,7 @@ def test_index_document_chunks_and_indexes_content():
     chunk = make_chunk()
     chunker = FakeChunker([chunk])
     retriever = FakeRetriever()
-    manager, _, _, _, _, _ = build_manager(
+    manager, _, _, _, _, _ = create_rag_manager(
         chunker=chunker,
         retriever=retriever,
     )
@@ -182,17 +178,17 @@ def test_index_document_chunks_and_indexes_content():
 
     assert chunks == [chunk]
     assert chunker.documents == [document]
-    assert retriever.indexed == [(
-        document.id,
-        [chunk],
-    )]
+    assert retriever.indexed == [
+        (
+            document.id,
+            [chunk],
+        )
+    ]
 
 
 def test_delete_document_delegates_to_retriever():
     retriever = FakeRetriever()
-    manager, _, _, _, _, _ = build_manager(
-        retriever=retriever
-    )
+    manager, _, _, _, _, _ = create_rag_manager(retriever=retriever)
 
     deleted_count = manager.delete_document("doc_rag")
 
@@ -201,12 +197,8 @@ def test_delete_document_delegates_to_retriever():
 
 
 def test_list_documents_delegates_to_retriever():
-    retriever = FakeRetriever(
-        documents=["doc_b", "doc_a"]
-    )
-    manager, _, _, _, _, _ = build_manager(
-        retriever=retriever
-    )
+    retriever = FakeRetriever(documents=["doc_b", "doc_a"])
+    manager, _, _, _, _, _ = create_rag_manager(retriever=retriever)
 
     assert manager.list_documents() == [
         "doc_b",
@@ -227,58 +219,38 @@ def test_list_documents_delegates_to_retriever():
 
 
 def test_send_message_retrieves_context_before_llm_call():
-    manager, conversation, client, repository, _, retriever = (
-        build_manager()
-    )
+    manager, conversation, client, repository, _, retriever = create_rag_manager()
 
     response = manager.send_message("User question")
 
     assert response == "Grounded answer"
     assert retriever.queries == [("User question", 2)]
-    assert "Retrieved knowledge" in (
-        client.received_messages[-1]["content"]
-    )
-    assert "User question" in (
-        client.received_messages[-1]["content"]
-    )
-    assert [
-        message.content
-        for message in conversation.history()
-    ] == ["User question", "Grounded answer"]
+    assert "Retrieved knowledge" in (client.received_messages[-1]["content"])
+    assert "User question" in (client.received_messages[-1]["content"])
+    assert [message.content for message in conversation.history()] == [
+        "User question",
+        "Grounded answer",
+    ]
     assert len(repository.saved) == 1
     assert len(manager.last_citations) == 1
     assert manager.last_citations[0].position == 1
-    assert manager.last_citations[0].source == (
-        "guide.txt"
-    )
-    assert manager.last_citations[0].score == pytest.approx(
-        0.9
-    )
+    assert manager.last_citations[0].source == ("guide.txt")
+    assert manager.last_citations[0].score == pytest.approx(0.9)
 
 
 def test_rag_message_traces_workflow_retrieval_and_llm_without_text():
     collector = InMemoryTraceCollector()
     tracer = Tracer(collector)
-    manager, _, _, _, _, _ = build_manager(tracer=tracer)
+    manager, _, _, _, _, _ = create_rag_manager(tracer=tracer)
 
     response = manager.send_message("private user question")
 
     records = collector.records()
-    root = next(
-        record
-        for record in records
-        if record.name == "conversation.send"
-    )
+    root = next(record for record in records if record.name == "conversation.send")
     retrieval = next(
-        record
-        for record in records
-        if record.category is TraceCategory.RETRIEVAL
+        record for record in records if record.category is TraceCategory.RETRIEVAL
     )
-    llm = next(
-        record
-        for record in records
-        if record.name == "llm.generate"
-    )
+    llm = next(record for record in records if record.name == "llm.generate")
     assert response == "Grounded answer"
     assert retrieval.parent_span_id == root.span_id
     assert llm.parent_span_id == root.span_id
@@ -288,47 +260,35 @@ def test_rag_message_traces_workflow_retrieval_and_llm_without_text():
     }
     assert llm.attributes["llm.message_count"] > 0
     assert llm.attributes["llm.response_char_count"] == len(response)
-    assert "private user question" not in str(
-        [record.to_dict() for record in records]
-    )
+    assert "private user question" not in str([record.to_dict() for record in records])
 
 
 def test_send_message_with_citations_returns_structured_response():
-    manager, _, _, _, _, _ = build_manager()
+    manager, _, _, _, _, _ = create_rag_manager()
 
-    response = manager.send_message_with_citations(
-        "User question"
-    )
+    response = manager.send_message_with_citations("User question")
 
     assert response.content == "Grounded answer"
     assert response.citations == manager.last_citations
-    assert response.citations[0].chunk_id == (
-        "chunk_context"
-    )
+    assert response.citations[0].chunk_id == ("chunk_context")
 
 
 def test_send_message_without_documents_skips_retrieval():
     retriever = FakeRetriever(documents=[])
-    manager, _, client, _, _, _ = build_manager(
-        retriever=retriever
-    )
+    manager, _, client, _, _, _ = create_rag_manager(retriever=retriever)
 
     response = manager.send_message("Plain question")
 
     assert response == "Grounded answer"
     assert retriever.queries == []
-    assert client.received_messages[-1]["content"] == (
-        "Plain question"
-    )
+    assert client.received_messages[-1]["content"] == ("Plain question")
     assert manager.last_citations == ()
 
 
 def test_retrieval_failure_rolls_back_user_message():
-    retriever = FakeRetriever(
-        error=RuntimeError("retrieval failed")
-    )
-    manager, conversation, client, repository, _, _ = (
-        build_manager(retriever=retriever)
+    retriever = FakeRetriever(error=RuntimeError("retrieval failed"))
+    manager, conversation, client, repository, _, _ = create_rag_manager(
+        retriever=retriever
     )
 
     with pytest.raises(RuntimeError, match="retrieval failed"):
@@ -342,13 +302,13 @@ def test_retrieval_failure_rolls_back_user_message():
 
 def test_rag_manager_rejects_non_positive_top_k():
     with pytest.raises(ValueError, match="greater than zero"):
-        build_manager(retrieval_k=0)
+        create_rag_manager(retrieval_k=0)
 
 
 def test_rag_manager_combines_retrieval_context_and_tools():
     client = FakeToolClient()
     executor = ToolExecutor(ToolRegistry())
-    manager, _, _, repository, _, retriever = build_manager(
+    manager, _, _, repository, _, retriever = create_rag_manager(
         client=client,
         tool_executor=executor,
     )
@@ -357,8 +317,6 @@ def test_rag_manager_combines_retrieval_context_and_tools():
 
     assert response == "Tool-grounded answer"
     assert retriever.queries == [("Tool question", 2)]
-    assert "Retrieved knowledge" in (
-        client.received_messages[-1]["content"]
-    )
+    assert "Retrieved knowledge" in (client.received_messages[-1]["content"])
     assert client.tool_request == (executor, 8)
     assert len(repository.saved) == 1

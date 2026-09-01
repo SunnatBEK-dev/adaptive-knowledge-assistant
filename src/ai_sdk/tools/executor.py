@@ -1,5 +1,10 @@
 import json
 
+from ai_sdk.observability import (
+    TraceCategory,
+    Tracer,
+    trace_span,
+)
 from ai_sdk.tools.model import (
     ToolCall,
     ToolHandlerError,
@@ -7,11 +12,6 @@ from ai_sdk.tools.model import (
 )
 from ai_sdk.tools.registry import ToolRegistry
 from ai_sdk.tools.schema import ToolValidationError
-from ai_sdk.observability import (
-    TraceCategory,
-    Tracer,
-    trace_span,
-)
 
 
 class ToolExecutor:
@@ -62,9 +62,7 @@ class ToolExecutor:
             )
 
         try:
-            arguments = tool.schema.validate_arguments(
-                call.arguments
-            )
+            arguments = tool.schema.validate_arguments(call.arguments)
             output = tool.handler(**arguments)
             content = self._serialize_output(output)
         except (ToolValidationError, ToolHandlerError) as error:
@@ -72,9 +70,7 @@ class ToolExecutor:
                 call_id=call.id,
                 name=call.name,
                 content=(
-                    error.content
-                    if isinstance(error, ToolHandlerError)
-                    else str(error)
+                    error.content if isinstance(error, ToolHandlerError) else str(error)
                 ),
                 is_error=True,
             )
@@ -82,10 +78,7 @@ class ToolExecutor:
             return ToolResult(
                 call_id=call.id,
                 name=call.name,
-                content=(
-                    "Tool execution failed: "
-                    f"{type(error).__name__}"
-                ),
+                content=(f"Tool execution failed: {type(error).__name__}"),
                 is_error=True,
             )
 

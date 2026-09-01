@@ -24,43 +24,34 @@ class RecordingIndex:
 
         self.indexed.append(document.id)
         self.catalog = [
-            item
-            for item in self.catalog
-            if item.document_id != document.id
+            item for item in self.catalog if item.document_id != document.id
         ]
-        self.catalog.append(IndexedDocument(
-            document_id=document.id,
-            source=document.metadata["source"],
-            chunk_count=1,
-            content_hash=document.metadata["content_hash"],
-            ingestion_root=document.metadata[
-                "ingestion_root"
-            ],
-        ))
-        return [Chunk(
-            id=f"chunk_{document.id}",
-            document_id=document.id,
-            content=document.content,
-            index=0,
-            metadata=document.metadata,
-        )]
+        self.catalog.append(
+            IndexedDocument(
+                document_id=document.id,
+                source=document.metadata["source"],
+                chunk_count=1,
+                content_hash=document.metadata["content_hash"],
+                ingestion_root=document.metadata["ingestion_root"],
+            )
+        )
+        return [
+            Chunk(
+                id=f"chunk_{document.id}",
+                document_id=document.id,
+                content=document.content,
+                index=0,
+                metadata=document.metadata,
+            )
+        ]
 
     def delete_document(self, document_id):
-        matches = [
-            item
-            for item in self.catalog
-            if item.document_id == document_id
-        ]
+        matches = [item for item in self.catalog if item.document_id == document_id]
         self.catalog = [
-            item
-            for item in self.catalog
-            if item.document_id != document_id
+            item for item in self.catalog if item.document_id != document_id
         ]
         self.deleted.append(document_id)
-        return sum(
-            item.chunk_count
-            for item in matches
-        )
+        return sum(item.chunk_count for item in matches)
 
 
 def test_directory_sync_skips_unchanged_documents(tmp_path):
@@ -156,10 +147,7 @@ def test_directory_sync_does_not_remove_stale_files_when_indexing_fails(
     with pytest.raises(RuntimeError, match="index failed"):
         synchronizer.sync(directory)
 
-    assert stale_id in {
-        item.document_id
-        for item in index.catalog
-    }
+    assert stale_id in {item.document_id for item in index.catalog}
     assert index.deleted == []
 
 
@@ -189,16 +177,9 @@ def test_directory_sync_upgrades_legacy_catalog_metadata(tmp_path):
         index,
     ).sync(directory)
 
-    upgraded = next(
-        item
-        for item in index.catalog
-        if item.document_id == document.id
-    )
+    upgraded = next(item for item in index.catalog if item.document_id == document.id)
     assert result.indexed_documents == (document.id,)
     assert upgraded.content_hash is not None
     assert upgraded.ingestion_root == str(directory.resolve())
-    assert "doc_other" in {
-        item.document_id
-        for item in index.catalog
-    }
+    assert "doc_other" in {item.document_id for item in index.catalog}
     assert index.deleted == []

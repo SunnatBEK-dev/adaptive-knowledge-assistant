@@ -1,1 +1,1 @@
--e .
+-e .[documents,embeddings,web]

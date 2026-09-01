@@ -9,8 +9,7 @@ from ai_sdk.context.summary import (
 )
 from ai_sdk.context.window import SlidingContextWindow
 from ai_sdk.core.conversation import Conversation
-from ai_sdk.storage.json import JsonConversationRepository
-
+from ai_sdk.storage.json import JSONConversationRepository
 
 pytestmark = pytest.mark.integration
 
@@ -35,9 +34,7 @@ def test_context_window_limits_prompt_but_preserves_full_history(
     conversation.add_assistant("Old answer")
     conversation.add_user("Recent question")
     conversation.add_assistant("Recent answer")
-    repository = JsonConversationRepository(
-        tmp_path / "chat.json"
-    )
+    repository = JSONConversationRepository(tmp_path / "chat.json")
     client = RecordingLLMClient()
     manager = ConversationManager(
         conversation=conversation,
@@ -47,9 +44,7 @@ def test_context_window_limits_prompt_but_preserves_full_history(
                 max_tokens=2,
                 message_overhead=0,
             ),
-            summary_memory=ExtractiveConversationSummarizer(
-                max_tokens=8
-            ),
+            summary_memory=ExtractiveConversationSummarizer(max_tokens=8),
         ),
         client=client,
         repository=repository,
@@ -65,10 +60,7 @@ def test_context_window_limits_prompt_but_preserves_full_history(
     assert "Assistant: Recent answer" in prompt
     assert "Latest question" in prompt
     assert "Old question" not in prompt
-    assert [
-        message.content
-        for message in restored.history()
-    ] == [
+    assert [message.content for message in restored.history()] == [
         "Old question",
         "Old answer",
         "Recent question",

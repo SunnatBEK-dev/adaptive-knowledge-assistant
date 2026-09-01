@@ -2,7 +2,6 @@ from ai_sdk.core.message import Message
 
 
 class Conversation:
-
     def __init__(self) -> None:
         self.messages: list[Message] = []
 

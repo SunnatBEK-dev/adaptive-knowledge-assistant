@@ -7,7 +7,6 @@ from math import fsum, log, sqrt
 from ai_sdk.embeddings.base import EmbeddingVector
 from ai_sdk.retrieval.chunk import Chunk
 
-
 EmbeddedChunk = tuple[Chunk, EmbeddingVector]
 
 
@@ -23,14 +22,10 @@ def cosine_similarity(
 ) -> float:
     """Measure vector direction similarity without external math libraries."""
     if not left or not right:
-        raise ValueError(
-            "Embedding vectors cannot be empty."
-        )
+        raise ValueError("Embedding vectors cannot be empty.")
 
     if len(left) != len(right):
-        raise ValueError(
-            "Embedding vectors must have equal dimensions."
-        )
+        raise ValueError("Embedding vectors must have equal dimensions.")
 
     dot_product = fsum(
         left_value * right_value
@@ -40,21 +35,13 @@ def cosine_similarity(
             strict=True,
         )
     )
-    left_norm = sqrt(fsum(
-        value * value
-        for value in left
-    ))
-    right_norm = sqrt(fsum(
-        value * value
-        for value in right
-    ))
+    left_norm = sqrt(fsum(value * value for value in left))
+    right_norm = sqrt(fsum(value * value for value in right))
 
     if left_norm == 0.0 or right_norm == 0.0:
         return 0.0
 
-    score = dot_product / (
-        left_norm * right_norm
-    )
+    score = dot_product / (left_norm * right_norm)
 
     return max(-1.0, min(1.0, score))
 
@@ -66,9 +53,7 @@ def top_k_search(
 ) -> list[SearchResult]:
     """Return the most similar chunks in descending score order."""
     if k <= 0:
-        raise ValueError(
-            "Top-k value must be greater than zero."
-        )
+        raise ValueError("Top-k value must be greater than zero.")
 
     results = [
         SearchResult(
@@ -95,14 +80,10 @@ def bm25_search(
 ) -> list[SearchResult]:
     """Rank chunks by lexical relevance using dependency-free BM25."""
     if not query.strip():
-        raise ValueError(
-            "Lexical search query cannot be empty."
-        )
+        raise ValueError("Lexical search query cannot be empty.")
 
     if k <= 0:
-        raise ValueError(
-            "Top-k value must be greater than zero."
-        )
+        raise ValueError("Top-k value must be greater than zero.")
 
     candidate_list = list(candidates)
 
@@ -114,20 +95,12 @@ def bm25_search(
     if not query_terms:
         return []
 
-    tokenized_candidates = [
-        _tokenize(chunk.content)
-        for chunk in candidate_list
-    ]
+    tokenized_candidates = [_tokenize(chunk.content) for chunk in candidate_list]
     document_frequencies = Counter(
-        term
-        for terms in tokenized_candidates
-        for term in set(terms)
+        term for terms in tokenized_candidates for term in set(terms)
     )
     document_count = len(candidate_list)
-    average_length = (
-        sum(len(terms) for terms in tokenized_candidates)
-        / document_count
-    )
+    average_length = sum(len(terms) for terms in tokenized_candidates) / document_count
     k1 = 1.5
     length_normalization = 0.75
     results = []
@@ -153,10 +126,12 @@ def bm25_search(
         )
 
         if score > 0.0:
-            results.append(SearchResult(
-                chunk=chunk,
-                score=score,
-            ))
+            results.append(
+                SearchResult(
+                    chunk=chunk,
+                    score=score,
+                )
+            )
 
     results.sort(
         key=lambda result: result.score,
@@ -176,19 +151,13 @@ def fuse_ranked_results(
 ) -> list[SearchResult]:
     """Fuse semantic and lexical ranks into normalized RRF scores."""
     if not 0.0 <= semantic_weight <= 1.0:
-        raise ValueError(
-            "Semantic weight must be between zero and one."
-        )
+        raise ValueError("Semantic weight must be between zero and one.")
 
     if k <= 0:
-        raise ValueError(
-            "Top-k value must be greater than zero."
-        )
+        raise ValueError("Top-k value must be greater than zero.")
 
     if rank_constant < 0:
-        raise ValueError(
-            "Rank constant cannot be negative."
-        )
+        raise ValueError("Rank constant cannot be negative.")
 
     scores: dict[str, float] = {}
     chunks: dict[str, Chunk] = {}
@@ -203,9 +172,8 @@ def fuse_ranked_results(
         for rank, result in enumerate(results, start=1):
             chunk_id = result.chunk.id
             chunks.setdefault(chunk_id, result.chunk)
-            scores[chunk_id] = (
-                scores.get(chunk_id, 0.0)
-                + weight / (rank_constant + rank)
+            scores[chunk_id] = scores.get(chunk_id, 0.0) + weight / (
+                rank_constant + rank
             )
 
     fused_results = [
@@ -241,32 +209,13 @@ def _bm25_term_score(
     length_normalization: float,
 ) -> float:
     inverse_document_frequency = log(
-        1.0
-        + (
-            document_count
-            - document_frequency
-            + 0.5
-        )
-        / (document_frequency + 0.5)
+        1.0 + (document_count - document_frequency + 0.5) / (document_frequency + 0.5)
     )
     normalized_length = (
-        document_length / average_length
-        if average_length > 0.0
-        else 0.0
+        document_length / average_length if average_length > 0.0 else 0.0
     )
-    denominator = (
-        term_frequency
-        + k1
-        * (
-            1.0
-            - length_normalization
-            + length_normalization * normalized_length
-        )
+    denominator = term_frequency + k1 * (
+        1.0 - length_normalization + length_normalization * normalized_length
     )
 
-    return (
-        inverse_document_frequency
-        * term_frequency
-        * (k1 + 1.0)
-        / denominator
-    )
+    return inverse_document_frequency * term_frequency * (k1 + 1.0) / denominator

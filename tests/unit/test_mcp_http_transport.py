@@ -1,7 +1,7 @@
+import json
 from base64 import b64encode
 from email.message import Message
 from io import BytesIO
-import json
 from urllib.error import HTTPError, URLError
 
 import pytest
@@ -30,11 +30,7 @@ class FakeResponse:
         status=200,
         raw=False,
     ):
-        self.body = (
-            payload
-            if raw
-            else json.dumps(payload).encode("utf-8")
-        )
+        self.body = payload if raw else json.dumps(payload).encode("utf-8")
         self.headers = {"Content-Type": content_type}
         self.status = status
         self.closed = False
@@ -85,10 +81,7 @@ def make_context():
 
 
 def request_headers(request):
-    return {
-        key.casefold(): value
-        for key, value in request.header_items()
-    }
+    return {key.casefold(): value for key, value in request.header_items()}
 
 
 def test_discovery_sends_stateless_headers_metadata_and_fresh_auth():
@@ -140,13 +133,9 @@ def test_discovery_sends_stateless_headers_metadata_and_fresh_auth():
     assert first_request.get_method() == "POST"
     assert first_timeout == 3
     assert second_timeout == 4
-    assert first_headers["accept"] == (
-        "application/json, text/event-stream"
-    )
+    assert first_headers["accept"] == ("application/json, text/event-stream")
     assert first_headers["content-type"] == "application/json"
-    assert first_headers["mcp-protocol-version"] == (
-        MCP_PROTOCOL_VERSION
-    )
+    assert first_headers["mcp-protocol-version"] == (MCP_PROTOCOL_VERSION)
     assert first_headers["mcp-method"] == "server/discover"
     assert "mcp-name" not in first_headers
     assert first_headers["authorization"] == "Bearer first"
@@ -259,12 +248,8 @@ def test_tool_list_filters_invalid_header_schema_and_mirrors_values():
     assert headers["mcp-name"] == "search"
     assert headers["mcp-param-count"] == "2"
     assert headers["mcp-param-enabled"] == "false"
-    assert headers["mcp-param-greeting"] == (
-        "=?base64?SGVsbG8sIGR1bnlvIPCfjI0=?="
-    )
-    assert headers["mcp-param-tenant"] == (
-        "=?base64?IGFjbWUg?="
-    )
+    assert headers["mcp-param-greeting"] == ("=?base64?SGVsbG8sIGR1bnlvIPCfjI0=?=")
+    assert headers["mcp-param-tenant"] == ("=?base64?IGFjbWUg?=")
 
 
 @pytest.mark.parametrize(
@@ -386,9 +371,7 @@ def test_tool_list_excludes_each_invalid_x_mcp_header(invalid_schema):
 )
 def test_tool_call_rejects_invalid_mirrored_argument(schema, arguments):
     opener = FakeOpener(
-        result_response(
-            {"tools": [{"name": "tool", "inputSchema": schema}]}
-        )
+        result_response({"tools": [{"name": "tool", "inputSchema": schema}]})
     )
     transport = StreamableHTTPTransport(
         "https://example.com/mcp",
@@ -501,9 +484,7 @@ def test_sse_ignores_comments_and_notifications_before_final_response():
         }
     )
     body = (
-        ": keep-alive\n\n"
-        f"data: {notification}\n\n"
-        f"event: message\ndata: {final}\n\n"
+        f": keep-alive\n\ndata: {notification}\n\nevent: message\ndata: {final}\n\n"
     ).encode()
     opener = FakeOpener(
         FakeResponse(
@@ -529,8 +510,7 @@ def test_sse_ignores_comments_and_notifications_before_final_response():
 
 def test_sse_accepts_final_event_without_trailing_blank_line():
     body = (
-        b'data: {"jsonrpc":"2.0","id":1,'
-        b'"result":{"resultType":"complete","tools":[]}}'
+        b'data: {"jsonrpc":"2.0","id":1,"result":{"resultType":"complete","tools":[]}}'
     )
     transport = StreamableHTTPTransport(
         "https://example.com/mcp",
@@ -544,11 +524,14 @@ def test_sse_accepts_final_event_without_trailing_blank_line():
     )
     transport.open(timeout_seconds=1)
 
-    assert transport.list_tools(
-        make_context(),
-        cursor=None,
-        timeout_seconds=1,
-    ).tools == ()
+    assert (
+        transport.list_tools(
+            make_context(),
+            cursor=None,
+            timeout_seconds=1,
+        ).tools
+        == ()
+    )
 
 
 @pytest.mark.parametrize(
@@ -556,8 +539,7 @@ def test_sse_accepts_final_event_without_trailing_blank_line():
     [
         (b": only comment\n\n", "without a final"),
         (
-            b'data: {"jsonrpc":"2.0","id":9,'
-            b'"method":"sampling/createMessage"}\n\n',
+            b'data: {"jsonrpc":"2.0","id":9,"method":"sampling/createMessage"}\n\n',
             "server request",
         ),
         (
@@ -738,10 +720,13 @@ def test_malformed_server_info_is_ignored():
     )
     transport.open(timeout_seconds=1)
 
-    assert transport.discover(
-        make_context(),
-        timeout_seconds=1,
-    ).server_info is None
+    assert (
+        transport.discover(
+            make_context(),
+            timeout_seconds=1,
+        ).server_info
+        is None
+    )
 
 
 @pytest.mark.parametrize(
@@ -1056,11 +1041,7 @@ def test_tool_input_required_and_retry_use_new_id_and_exact_state():
                                 "message": "Delete files?",
                                 "requestedSchema": {
                                     "type": "object",
-                                    "properties": {
-                                        "approved": {
-                                            "type": "boolean"
-                                        }
-                                    },
+                                    "properties": {"approved": {"type": "boolean"}},
                                 },
                             },
                         }
@@ -1104,9 +1085,7 @@ def test_tool_input_required_and_retry_use_new_id_and_exact_state():
     )
 
     assert isinstance(required, MCPInputRequiredResult)
-    assert required.input_requests["confirm"].params["message"] == (
-        "Delete files?"
-    )
+    assert required.input_requests["confirm"].params["message"] == ("Delete files?")
     assert required.request_state == request_state
     assert complete.content[0].data["text"] == "deleted"
     first = json.loads(opener.calls[0][0].data)
@@ -1114,9 +1093,7 @@ def test_tool_input_required_and_retry_use_new_id_and_exact_state():
     assert first["id"] == 1
     assert second["id"] == 2
     assert "inputResponses" not in first["params"]
-    assert second["params"]["inputResponses"] == {
-        "confirm": {"action": "accept"}
-    }
+    assert second["params"]["inputResponses"] == {"confirm": {"action": "accept"}}
     assert second["params"]["requestState"] == request_state
 
 
@@ -1165,11 +1142,7 @@ def test_sse_can_end_with_input_required_resource_result():
             "invalid request",
         ),
         (
-            {
-                "inputRequests": {
-                    "one": {"method": "roots/list"}
-                }
-            },
+            {"inputRequests": {"one": {"method": "roots/list"}}},
             "invalid request",
         ),
         (

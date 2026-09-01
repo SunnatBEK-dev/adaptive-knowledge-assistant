@@ -17,10 +17,7 @@ class FakeEmbeddingClient(BaseEmbeddingClient):
         texts: Sequence[str],
     ) -> EmbeddingBatch:
         self.received_texts = list(texts)
-        return [
-            [float(index), float(len(text))]
-            for index, text in enumerate(texts)
-        ]
+        return [[float(index), float(len(text))] for index, text in enumerate(texts)]
 
 
 class BrokenEmbeddingClient(BaseEmbeddingClient):

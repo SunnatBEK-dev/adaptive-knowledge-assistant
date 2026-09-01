@@ -2,8 +2,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import ai_sdk.llm.claude as claude_module
-from ai_sdk.llm.claude import ClaudeClient
+import ai_sdk.llm.anthropic as anthropic_module
+from ai_sdk.llm.anthropic import AnthropicClient
 from ai_sdk.tools import (
     ToolExecutor,
     ToolParameter,
@@ -31,11 +31,13 @@ class FakeMessagesAPI:
 
     def create(self, **kwargs):
         self.create_call = kwargs
-        return SimpleNamespace(content=[
-            SimpleNamespace(type="text", text="Hello "),
-            SimpleNamespace(type="tool_use", name="ignored"),
-            SimpleNamespace(type="text", text="world"),
-        ])
+        return SimpleNamespace(
+            content=[
+                SimpleNamespace(type="text", text="Hello "),
+                SimpleNamespace(type="tool_use", name="ignored"),
+                SimpleNamespace(type="text", text="world"),
+            ]
+        )
 
     def stream(self, **kwargs):
         self.stream_call = kwargs
@@ -108,7 +110,7 @@ def build_add_executor(handler=lambda left, right: left + right):
 
 def test_ask_uses_injected_client_and_provider_configuration():
     fake = FakeAnthropicClient()
-    client = ClaudeClient(
+    client = AnthropicClient(
         client=fake,
         model="claude-test",
         max_tokens=77,
@@ -127,7 +129,7 @@ def test_ask_uses_injected_client_and_provider_configuration():
 
 def test_stream_uses_injected_client_without_network_access():
     fake = FakeAnthropicClient()
-    client = ClaudeClient(
+    client = AnthropicClient(
         client=fake,
         model="claude-test",
         max_tokens=55,
@@ -143,18 +145,18 @@ def test_stream_uses_injected_client_without_network_access():
 
 
 def test_missing_model_fails_before_request(monkeypatch):
-    monkeypatch.setattr(claude_module, "MODEL", None)
+    monkeypatch.setattr(anthropic_module, "ANTHROPIC_MODEL", None)
 
     with pytest.raises(RuntimeError, match="MODEL"):
-        ClaudeClient(client=FakeAnthropicClient())
+        AnthropicClient(client=FakeAnthropicClient())
 
 
 def test_missing_api_key_fails_before_real_client_is_created(monkeypatch):
-    monkeypatch.setattr(claude_module, "API_KEY", None)
-    monkeypatch.setattr(claude_module, "MODEL", "claude-test")
+    monkeypatch.setattr(anthropic_module, "ANTHROPIC_API_KEY", None)
+    monkeypatch.setattr(anthropic_module, "ANTHROPIC_MODEL", "claude-test")
 
     with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY"):
-        ClaudeClient()
+        AnthropicClient()
 
 
 def test_real_client_disables_hidden_provider_retries(monkeypatch):
@@ -164,9 +166,9 @@ def test_real_client_disables_hidden_provider_retries(monkeypatch):
         received.update(kwargs)
         return FakeAnthropicClient()
 
-    monkeypatch.setattr(claude_module, "Anthropic", build_client)
+    monkeypatch.setattr(anthropic_module, "Anthropic", build_client)
 
-    client = ClaudeClient(
+    client = AnthropicClient(
         api_key="test-value",
         model="claude-test",
         timeout=12.0,
@@ -181,20 +183,22 @@ def test_real_client_disables_hidden_provider_retries(monkeypatch):
 
 
 def test_ask_with_tools_completes_claude_tool_loop():
-    fake = QueuedAnthropicClient([
-        response(
-            text_block("I will calculate it."),
-            tool_block(
-                "tool_1",
-                "add",
-                {"left": 2, "right": 3},
+    fake = QueuedAnthropicClient(
+        [
+            response(
+                text_block("I will calculate it."),
+                tool_block(
+                    "tool_1",
+                    "add",
+                    {"left": 2, "right": 3},
+                ),
+                stop_reason="tool_use",
             ),
-            stop_reason="tool_use",
-        ),
-        response(text_block("The answer is 5.")),
-    ])
+            response(text_block("The answer is 5.")),
+        ]
+    )
     executor = build_add_executor()
-    client = ClaudeClient(client=fake, model="claude-test")
+    client = AnthropicClient(client=fake, model="claude-test")
     messages = [{"role": "user", "content": "What is 2 + 3?"}]
 
     result = client.ask_with_tools(messages, executor)
@@ -205,9 +209,7 @@ def test_ask_with_tools_completes_claude_tool_loop():
     ]
     assert len(fake.messages.create_calls) == 2
     first_call, second_call = fake.messages.create_calls
-    assert first_call["tools"] == (
-        executor.registry.provider_schemas()
-    )
+    assert first_call["tools"] == (executor.registry.provider_schemas())
     assert second_call["messages"] == [
         {"role": "user", "content": "What is 2 + 3?"},
         {
@@ -240,14 +242,16 @@ def test_ask_with_tools_completes_claude_tool_loop():
 
 
 def test_ask_with_tools_returns_execution_errors_to_claude():
-    fake = QueuedAnthropicClient([
-        response(
-            tool_block("tool_missing", "missing", {}),
-            stop_reason="tool_use",
-        ),
-        response(text_block("That tool is unavailable.")),
-    ])
-    client = ClaudeClient(client=fake, model="claude-test")
+    fake = QueuedAnthropicClient(
+        [
+            response(
+                tool_block("tool_missing", "missing", {}),
+                stop_reason="tool_use",
+            ),
+            response(text_block("That tool is unavailable.")),
+        ]
+    )
+    client = AnthropicClient(client=fake, model="claude-test")
 
     result = client.ask_with_tools(
         [{"role": "user", "content": "Use missing."}],
@@ -255,11 +259,7 @@ def test_ask_with_tools_returns_execution_errors_to_claude():
     )
 
     assert result == "That tool is unavailable."
-    result_block = (
-        fake.messages.create_calls[1]["messages"][-1][
-            "content"
-        ][0]
-    )
+    result_block = fake.messages.create_calls[1]["messages"][-1]["content"][0]
     assert result_block == {
         "type": "tool_result",
         "tool_use_id": "tool_missing",
@@ -270,31 +270,30 @@ def test_ask_with_tools_returns_execution_errors_to_claude():
 
 def test_ask_with_tools_enforces_round_limit_before_extra_execution():
     executions = []
-    fake = QueuedAnthropicClient([
-        response(
-            tool_block(
-                "tool_1",
-                "add",
-                {"left": 1, "right": 1},
+    fake = QueuedAnthropicClient(
+        [
+            response(
+                tool_block(
+                    "tool_1",
+                    "add",
+                    {"left": 1, "right": 1},
+                ),
+                stop_reason="tool_use",
             ),
-            stop_reason="tool_use",
-        ),
-        response(
-            tool_block(
-                "tool_2",
-                "add",
-                {"left": 2, "right": 2},
+            response(
+                tool_block(
+                    "tool_2",
+                    "add",
+                    {"left": 2, "right": 2},
+                ),
+                stop_reason="tool_use",
             ),
-            stop_reason="tool_use",
-        ),
-    ])
-    executor = build_add_executor(
-        lambda left, right: (
-            executions.append((left, right))
-            or left + right
-        )
+        ]
     )
-    client = ClaudeClient(client=fake, model="claude-test")
+    executor = build_add_executor(
+        lambda left, right: executions.append((left, right)) or left + right
+    )
+    client = AnthropicClient(client=fake, model="claude-test")
 
     with pytest.raises(RuntimeError, match="rounds exceeded"):
         client.ask_with_tools(
@@ -308,7 +307,7 @@ def test_ask_with_tools_enforces_round_limit_before_extra_execution():
 
 @pytest.mark.parametrize("max_tool_rounds", [0, -1, True, 1.5])
 def test_ask_with_tools_rejects_invalid_round_limit(max_tool_rounds):
-    client = ClaudeClient(
+    client = AnthropicClient(
         client=FakeAnthropicClient(),
         model="claude-test",
     )
@@ -322,13 +321,15 @@ def test_ask_with_tools_rejects_invalid_round_limit(max_tool_rounds):
 
 
 def test_ask_with_tools_rejects_malformed_or_duplicate_calls():
-    malformed = ClaudeClient(
-        client=QueuedAnthropicClient([
-            response(
-                tool_block("tool_1", "add", "not-an-object"),
-                stop_reason="tool_use",
-            ),
-        ]),
+    malformed = AnthropicClient(
+        client=QueuedAnthropicClient(
+            [
+                response(
+                    tool_block("tool_1", "add", "not-an-object"),
+                    stop_reason="tool_use",
+                ),
+            ]
+        ),
         model="claude-test",
     )
 
@@ -338,22 +339,24 @@ def test_ask_with_tools_rejects_malformed_or_duplicate_calls():
             build_add_executor(),
         )
 
-    duplicate = ClaudeClient(
-        client=QueuedAnthropicClient([
-            response(
-                tool_block(
-                    "tool_1",
-                    "add",
-                    {"left": 1, "right": 2},
+    duplicate = AnthropicClient(
+        client=QueuedAnthropicClient(
+            [
+                response(
+                    tool_block(
+                        "tool_1",
+                        "add",
+                        {"left": 1, "right": 2},
+                    ),
+                    tool_block(
+                        "tool_1",
+                        "add",
+                        {"left": 3, "right": 4},
+                    ),
+                    stop_reason="tool_use",
                 ),
-                tool_block(
-                    "tool_1",
-                    "add",
-                    {"left": 3, "right": 4},
-                ),
-                stop_reason="tool_use",
-            ),
-        ]),
+            ]
+        ),
         model="claude-test",
     )
 
@@ -366,7 +369,7 @@ def test_ask_with_tools_rejects_malformed_or_duplicate_calls():
 
 def test_ask_with_tools_uses_plain_ask_for_empty_registry():
     fake = FakeAnthropicClient()
-    client = ClaudeClient(
+    client = AnthropicClient(
         client=fake,
         model="claude-test",
     )
@@ -381,23 +384,25 @@ def test_ask_with_tools_uses_plain_ask_for_empty_registry():
 
 
 def test_ask_with_tools_executes_multiple_calls_in_provider_order():
-    fake = QueuedAnthropicClient([
-        response(
-            tool_block(
-                "tool_1",
-                "add",
-                {"left": 1, "right": 2},
+    fake = QueuedAnthropicClient(
+        [
+            response(
+                tool_block(
+                    "tool_1",
+                    "add",
+                    {"left": 1, "right": 2},
+                ),
+                tool_block(
+                    "tool_2",
+                    "add",
+                    {"left": 3, "right": 4},
+                ),
+                stop_reason="tool_use",
             ),
-            tool_block(
-                "tool_2",
-                "add",
-                {"left": 3, "right": 4},
-            ),
-            stop_reason="tool_use",
-        ),
-        response(text_block("The answers are 3 and 7.")),
-    ])
-    client = ClaudeClient(client=fake, model="claude-test")
+            response(text_block("The answers are 3 and 7.")),
+        ]
+    )
+    client = AnthropicClient(client=fake, model="claude-test")
 
     result = client.ask_with_tools(
         [{"role": "user", "content": "Add both pairs."}],
@@ -405,11 +410,7 @@ def test_ask_with_tools_executes_multiple_calls_in_provider_order():
     )
 
     assert result == "The answers are 3 and 7."
-    result_blocks = (
-        fake.messages.create_calls[1]["messages"][-1][
-            "content"
-        ]
-    )
+    result_blocks = fake.messages.create_calls[1]["messages"][-1]["content"]
     assert [block["tool_use_id"] for block in result_blocks] == [
         "tool_1",
         "tool_2",
@@ -427,16 +428,15 @@ def test_ask_with_tools_rejects_duplicate_id_across_rounds():
         "add",
         {"left": 1, "right": 2},
     )
-    fake = QueuedAnthropicClient([
-        response(repeated_call, stop_reason="tool_use"),
-        response(repeated_call, stop_reason="tool_use"),
-    ])
-    client = ClaudeClient(client=fake, model="claude-test")
+    fake = QueuedAnthropicClient(
+        [
+            response(repeated_call, stop_reason="tool_use"),
+            response(repeated_call, stop_reason="tool_use"),
+        ]
+    )
+    client = AnthropicClient(client=fake, model="claude-test")
     executor = build_add_executor(
-        lambda left, right: (
-            executions.append((left, right))
-            or left + right
-        )
+        lambda left, right: executions.append((left, right)) or left + right
     )
 
     with pytest.raises(RuntimeError, match="duplicate"):
@@ -449,7 +449,7 @@ def test_ask_with_tools_rejects_duplicate_id_across_rounds():
 
 
 def test_ask_with_tools_rejects_invalid_executor():
-    client = ClaudeClient(
+    client = AnthropicClient(
         client=FakeAnthropicClient(),
         model="claude-test",
     )
@@ -462,13 +462,15 @@ def test_ask_with_tools_rejects_invalid_executor():
 
 
 def test_ask_with_tools_rejects_inconsistent_tool_stop_reason():
-    client = ClaudeClient(
-        client=QueuedAnthropicClient([
-            response(
-                text_block("No tool block."),
-                stop_reason="tool_use",
-            ),
-        ]),
+    client = AnthropicClient(
+        client=QueuedAnthropicClient(
+            [
+                response(
+                    text_block("No tool block."),
+                    stop_reason="tool_use",
+                ),
+            ]
+        ),
         model="claude-test",
     )
 
@@ -490,13 +492,15 @@ def test_ask_with_tools_rejects_invalid_response_content(
     content,
     message,
 ):
-    provider = QueuedAnthropicClient([
-        SimpleNamespace(
-            content=content,
-            stop_reason="end_turn",
-        ),
-    ])
-    client = ClaudeClient(client=provider, model="claude-test")
+    provider = QueuedAnthropicClient(
+        [
+            SimpleNamespace(
+                content=content,
+                stop_reason="end_turn",
+            ),
+        ]
+    )
+    client = AnthropicClient(client=provider, model="claude-test")
 
     with pytest.raises(RuntimeError, match=message):
         client.ask_with_tools(

@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 
-
 EmbeddingVector = list[float]
 EmbeddingBatch = list[EmbeddingVector]
 
@@ -26,8 +25,7 @@ class BaseEmbeddingClient(ABC):
 
         if len(vectors) != 1:
             raise RuntimeError(
-                "Embedding client must return exactly one "
-                "vector for one input text."
+                "Embedding client must return exactly one vector for one input text."
             )
 
         return vectors[0]

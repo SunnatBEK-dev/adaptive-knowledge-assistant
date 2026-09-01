@@ -13,10 +13,9 @@ from ai_sdk.ingestion import (
     create_default_ingestor,
 )
 from ai_sdk.retrieval.chunker import TextChunker
-from ai_sdk.retrieval.json_store import JsonVectorStore
+from ai_sdk.retrieval.json_store import JSONVectorStore
 from ai_sdk.retrieval.retriever import SemanticRetriever
-from ai_sdk.storage.json import JsonConversationRepository
-
+from ai_sdk.storage.json import JSONConversationRepository
 
 pytestmark = pytest.mark.integration
 
@@ -38,25 +37,21 @@ class UnusedLLMClient:
         raise NotImplementedError
 
 
-def build_manager(tmp_path, embedding_client):
+def create_rag_manager(tmp_path, embedding_client):
     conversation = Conversation()
 
     return RAGConversationManager(
         conversation=conversation,
         prompt_builder=PromptBuilder(conversation),
         client=UnusedLLMClient(),
-        repository=JsonConversationRepository(
-            tmp_path / "chat.json"
-        ),
+        repository=JSONConversationRepository(tmp_path / "chat.json"),
         chunker=TextChunker(
             chunk_size=100,
             overlap=0,
         ),
         retriever=SemanticRetriever(
             embedding_client=embedding_client,
-            vector_store=JsonVectorStore(
-                tmp_path / "vectors.json"
-            ),
+            vector_store=JSONVectorStore(tmp_path / "vectors.json"),
         ),
     )
 
@@ -71,7 +66,7 @@ def test_directory_sync_survives_restart_and_skips_unchanged_files(
     changed_path.write_text("Old", encoding="utf-8")
     removed_path.write_text("Remove", encoding="utf-8")
     first_embedding = RecordingEmbeddingClient()
-    first_manager = build_manager(
+    first_manager = create_rag_manager(
         tmp_path,
         first_embedding,
     )
@@ -88,7 +83,7 @@ def test_directory_sync_survives_restart_and_skips_unchanged_files(
     removed_path.unlink()
 
     second_embedding = RecordingEmbeddingClient()
-    second_manager = build_manager(
+    second_manager = create_rag_manager(
         tmp_path,
         second_embedding,
     )
@@ -104,15 +99,11 @@ def test_directory_sync_survives_restart_and_skips_unchanged_files(
     assert second_result.removed_documents == (removed_id,)
     assert second_embedding.calls == [["Updated"]]
     assert len(persisted_catalog) == 1
-    assert persisted_catalog[0].content_hash == sha256(
-        b"Updated"
-    ).hexdigest()
-    assert persisted_catalog[0].ingestion_root == str(
-        directory.resolve()
-    )
+    assert persisted_catalog[0].content_hash == sha256(b"Updated").hexdigest()
+    assert persisted_catalog[0].ingestion_root == str(directory.resolve())
 
     third_embedding = RecordingEmbeddingClient()
-    third_manager = build_manager(
+    third_manager = create_rag_manager(
         tmp_path,
         third_embedding,
     )

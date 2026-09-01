@@ -6,10 +6,7 @@ from ai_sdk.core.message import Message
 from ai_sdk.storage.base import ConversationRepository
 
 
-class JsonConversationRepository(
-    ConversationRepository
-):
-
+class JSONConversationRepository(ConversationRepository):
     def __init__(self, file_path: Path) -> None:
         self.file_path = file_path
 
@@ -22,10 +19,7 @@ class JsonConversationRepository(
             exist_ok=True,
         )
 
-        data = [
-            message.to_dict()
-            for message in conversation.history()
-        ]
+        data = [message.to_dict() for message in conversation.history()]
 
         with self.file_path.open(
             "w",
@@ -56,10 +50,7 @@ class JsonConversationRepository(
             return conversation
 
         if not isinstance(data, list):
-            print(
-                "Invalid conversation format. "
-                "Starting empty."
-            )
+            print("Invalid conversation format. Starting empty.")
             return conversation
 
         changed = False
@@ -77,9 +68,7 @@ class JsonConversationRepository(
                     changed = True
 
             except (KeyError, TypeError) as e:
-                print(
-                    f"Invalid message skipped: {e}"
-                )
+                print(f"Invalid message skipped: {e}")
 
         if changed:
             self.save(conversation)

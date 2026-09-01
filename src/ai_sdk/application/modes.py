@@ -1,8 +1,8 @@
 from enum import Enum
 
 
-class ApplicationMode(str, Enum):
-    """User-visible application sections."""
+class AssistantMode(str, Enum):
+    """User-visible assistant operating modes."""
 
-    DIRECT_CHAT = "direct_chat"
-    SUPER_AI = "super_ai"
+    SINGLE_MODEL = "single_model"
+    ADAPTIVE_MULTI_MODEL = "adaptive"

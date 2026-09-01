@@ -36,9 +36,7 @@ class OpenAIClient(BaseToolLLMClient):
         self.max_output_tokens = max_output_tokens
 
         if not self.model:
-            raise RuntimeError(
-                "OPENAI_MODEL or MODEL is not configured."
-            )
+            raise RuntimeError("OPENAI_MODEL or MODEL is not configured.")
 
         if client is not None:
             self.client = client
@@ -46,9 +44,7 @@ class OpenAIClient(BaseToolLLMClient):
 
         resolved_api_key = api_key or OPENAI_API_KEY
         if not resolved_api_key:
-            raise RuntimeError(
-                "OPENAI_API_KEY is not configured."
-            )
+            raise RuntimeError("OPENAI_API_KEY is not configured.")
 
         self.client = OpenAI(
             api_key=resolved_api_key,
@@ -68,9 +64,7 @@ class OpenAIClient(BaseToolLLMClient):
         )
         output_text = getattr(response, "output_text", None)
         if not isinstance(output_text, str):
-            raise RuntimeError(
-                "OpenAI response output text is invalid."
-            )
+            raise RuntimeError("OpenAI response output text is invalid.")
         return output_text
 
     def stream(
@@ -92,9 +86,7 @@ class OpenAIClient(BaseToolLLMClient):
                 continue
             delta = getattr(event, "delta", None)
             if not isinstance(delta, str):
-                raise RuntimeError(
-                    "OpenAI streaming text delta is invalid."
-                )
+                raise RuntimeError("OpenAI streaming text delta is invalid.")
             yield delta
 
     def complete_tool_turn(
@@ -110,14 +102,10 @@ class OpenAIClient(BaseToolLLMClient):
             "store": False,
         }
         if schemas:
-            request["tools"] = [
-                self._tool_schema(schema) for schema in schemas
-            ]
+            request["tools"] = [self._tool_schema(schema) for schema in schemas]
 
         response = self.client.responses.create(**request)
-        return self._parse_agent_response(
-            getattr(response, "output", None)
-        )
+        return self._parse_agent_response(getattr(response, "output", None))
 
     @staticmethod
     def _base_input(
@@ -141,23 +129,26 @@ class OpenAIClient(BaseToolLLMClient):
         for event in events:
             for block in event.response.blocks:
                 if isinstance(block, AgentTextBlock):
-                    provider_input.append({
-                        "role": "assistant",
-                        "content": block.text,
-                    })
+                    provider_input.append(
+                        {
+                            "role": "assistant",
+                            "content": block.text,
+                        }
+                    )
                 else:
-                    provider_input.append({
-                        "type": "function_call",
-                        "call_id": block.id,
-                        "name": block.name,
-                        "arguments": json.dumps(
-                            block.arguments,
-                            ensure_ascii=False,
-                        ),
-                    })
+                    provider_input.append(
+                        {
+                            "type": "function_call",
+                            "call_id": block.id,
+                            "name": block.name,
+                            "arguments": json.dumps(
+                                block.arguments,
+                                ensure_ascii=False,
+                            ),
+                        }
+                    )
             provider_input.extend(
-                cls._tool_result_input(result)
-                for result in event.tool_results
+                cls._tool_result_input(result) for result in event.tool_results
             )
         return provider_input
 
@@ -191,10 +182,7 @@ class OpenAIClient(BaseToolLLMClient):
             "name": provider_schema["name"],
             "description": provider_schema["description"],
             "parameters": parameters,
-            "strict": all(
-                parameter.required
-                for parameter in schema.parameters
-            ),
+            "strict": all(parameter.required for parameter in schema.parameters),
         }
 
     @staticmethod
@@ -202,9 +190,7 @@ class OpenAIClient(BaseToolLLMClient):
         output: object,
     ) -> AgentModelResponse:
         if not isinstance(output, list):
-            raise RuntimeError(
-                "OpenAI response output must be a list."
-            )
+            raise RuntimeError("OpenAI response output must be a list.")
 
         parsed_blocks: list[AgentTextBlock | ToolCall] = []
         for item in output:
@@ -227,9 +213,7 @@ class OpenAIClient(BaseToolLLMClient):
                     arguments=parsed_arguments,
                 )
             except (TypeError, ValueError) as error:
-                raise RuntimeError(
-                    "OpenAI function-call item is invalid."
-                ) from error
+                raise RuntimeError("OpenAI function-call item is invalid.") from error
             parsed_blocks.append(call)
 
         return AgentModelResponse(parsed_blocks)
@@ -240,9 +224,7 @@ class OpenAIClient(BaseToolLLMClient):
         content: object,
     ) -> None:
         if not isinstance(content, list):
-            raise RuntimeError(
-                "OpenAI message content must be a list."
-            )
+            raise RuntimeError("OpenAI message content must be a list.")
         for block in content:
             block_type = getattr(block, "type", None)
             if block_type == "output_text":
@@ -252,7 +234,5 @@ class OpenAIClient(BaseToolLLMClient):
             else:
                 continue
             if not isinstance(text, str):
-                raise RuntimeError(
-                    "OpenAI message text block is invalid."
-                )
+                raise RuntimeError("OpenAI message text block is invalid.")
             parsed_blocks.append(AgentTextBlock(text))

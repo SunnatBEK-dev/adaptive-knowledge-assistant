@@ -39,32 +39,40 @@ def valid_response(
     strengths=None,
     improvements=None,
 ):
-    return json.dumps({
-        "verdict": verdict,
-        "summary": summary,
-        "strengths": strengths or ["Clear result"],
-        "improvements": improvements or [],
-    })
+    return json.dumps(
+        {
+            "verdict": verdict,
+            "summary": summary,
+            "strengths": strengths or ["Clear result"],
+            "improvements": improvements or [],
+        }
+    )
 
 
 def build_finished_state():
-    state = AgentState([
-        {"role": "user", "content": "Double two."},
-    ])
+    state = AgentState(
+        [
+            {"role": "user", "content": "Double two."},
+        ]
+    )
     call = ToolCall(
         "call_1",
         "double",
         {"value": 2},
     )
-    state.record(AgentEvent(
-        1,
-        AgentModelResponse([call]),
-        [ToolResult("call_1", "double", "4")],
-    ))
-    state.record(AgentEvent(
-        2,
-        AgentModelResponse([AgentTextBlock("Four")]),
-    ))
+    state.record(
+        AgentEvent(
+            1,
+            AgentModelResponse([call]),
+            [ToolResult("call_1", "double", "4")],
+        )
+    )
+    state.record(
+        AgentEvent(
+            2,
+            AgentModelResponse([AgentTextBlock("Four")]),
+        )
+    )
     state.finish(
         AgentStopReason.FINAL_RESPONSE,
         "Four",
@@ -98,9 +106,7 @@ def test_agent_reflection_normalizes_structured_feedback():
 
     assert reflection.summary == "Improve error handling."
     assert reflection.strengths == ("Clear flow",)
-    assert reflection.improvements == (
-        "Add timeout handling",
-    )
+    assert reflection.improvements == ("Add timeout handling",)
 
 
 @pytest.mark.parametrize(
@@ -134,19 +140,17 @@ def test_reflector_reviews_finished_state_once_without_mutation():
     state = build_finished_state()
     original_messages = copy.deepcopy(state.messages)
     original_events = state.events.copy()
-    client = FakeReflectionClient(valid_response(
-        verdict="needs_improvement",
-        improvements=["Explain the tool result"],
-    ))
+    client = FakeReflectionClient(
+        valid_response(
+            verdict="needs_improvement",
+            improvements=["Explain the tool result"],
+        )
+    )
 
     reflection = LLMAgentReflector(client).reflect_state(state)
 
-    assert reflection.verdict is (
-        ReflectionVerdict.NEEDS_IMPROVEMENT
-    )
-    assert reflection.improvements == (
-        "Explain the tool result",
-    )
+    assert reflection.verdict is (ReflectionVerdict.NEEDS_IMPROVEMENT)
+    assert reflection.improvements == ("Explain the tool result",)
     assert len(client.calls) == 1
     prompt = client.calls[0][0]["content"]
     assert "completed agent_state" in prompt
@@ -165,12 +169,8 @@ def test_reflector_reviews_terminal_plan_without_mutation():
     reflection = LLMAgentReflector(client).reflect_plan(plan)
 
     assert reflection.verdict is ReflectionVerdict.PASSED
-    assert '"goal": "Finish task"' in (
-        client.calls[0][0]["content"]
-    )
-    assert '"status": "completed"' in (
-        client.calls[0][0]["content"]
-    )
+    assert '"goal": "Finish task"' in (client.calls[0][0]["content"])
+    assert '"status": "completed"' in (client.calls[0][0]["content"])
     assert plan.steps == original_steps
 
 
@@ -182,10 +182,12 @@ def test_reflector_accepts_failed_plan_as_terminal():
     plan.start_next()
     plan.fail_current("Dependency unavailable")
     reflector = LLMAgentReflector(
-        FakeReflectionClient(valid_response(
-            verdict="failed",
-            improvements=["Restore the dependency"],
-        ))
+        FakeReflectionClient(
+            valid_response(
+                verdict="failed",
+                improvements=["Restore the dependency"],
+            )
+        )
     )
 
     reflection = reflector.reflect_plan(plan)
@@ -194,26 +196,30 @@ def test_reflector_accepts_failed_plan_as_terminal():
 
 
 def test_reflector_rejects_unfinished_or_wrong_subjects():
-    reflector = LLMAgentReflector(
-        FakeReflectionClient(valid_response())
-    )
+    reflector = LLMAgentReflector(FakeReflectionClient(valid_response()))
 
     with pytest.raises(TypeError, match="AgentState"):
         reflector.reflect_state(object())
 
     with pytest.raises(ReflectionValidationError, match="finished"):
-        reflector.reflect_state(AgentState([
-            {"role": "user", "content": "Pending"},
-        ]))
+        reflector.reflect_state(
+            AgentState(
+                [
+                    {"role": "user", "content": "Pending"},
+                ]
+            )
+        )
 
     with pytest.raises(TypeError, match="AgentPlan"):
         reflector.reflect_plan(object())
 
     with pytest.raises(ReflectionValidationError, match="terminal"):
-        reflector.reflect_plan(AgentPlan(
-            "Pending",
-            [PlanStep("step_1", "Wait")],
-        ))
+        reflector.reflect_plan(
+            AgentPlan(
+                "Pending",
+                [PlanStep("step_1", "Wait")],
+            )
+        )
 
 
 @pytest.mark.parametrize(
@@ -235,8 +241,7 @@ def test_reflector_rejects_unfinished_or_wrong_subjects():
             "summary",
         ),
         (
-            '{"verdict":"passed","summary":"ok",'
-            '"strengths":"bad","improvements":[]}',
+            '{"verdict":"passed","summary":"ok","strengths":"bad","improvements":[]}',
             "strengths must be a list",
         ),
         (

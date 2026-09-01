@@ -31,21 +31,14 @@ class AgentState:
 
     @property
     def tool_rounds(self) -> int:
-        return sum(
-            bool(event.tool_results)
-            for event in self.events
-        )
+        return sum(bool(event.tool_results) for event in self.events)
 
     def record(self, event: AgentEvent) -> None:
         if self.is_finished:
-            raise RuntimeError(
-                "Finished agent state cannot record events."
-            )
+            raise RuntimeError("Finished agent state cannot record events.")
 
         if event.iteration != len(self.events) + 1:
-            raise ValueError(
-                "Agent event iteration is out of sequence."
-            )
+            raise ValueError("Agent event iteration is out of sequence.")
 
         self.events.append(event)
 
@@ -55,9 +48,7 @@ class AgentState:
         final_text: str,
     ) -> None:
         if self.is_finished:
-            raise RuntimeError(
-                "Agent state is already finished."
-            )
+            raise RuntimeError("Agent state is already finished.")
 
         if not isinstance(reason, AgentStopReason):
             raise TypeError("Agent stop reason is invalid.")

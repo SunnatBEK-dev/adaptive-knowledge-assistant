@@ -1,9 +1,8 @@
+import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from math import isfinite
-import re
 from typing import Protocol
-
 
 _NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 _ERROR_TYPE_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]{0,127}$")
@@ -24,13 +23,9 @@ class EvalCase:
     def __post_init__(self) -> None:
         object.__setattr__(self, "id", _validate_name(self.id, "case ID"))
         if not isinstance(self.input_text, str) or not self.input_text.strip():
-            raise EvaluationValidationError(
-                "Evaluation input text cannot be empty."
-            )
+            raise EvaluationValidationError("Evaluation input text cannot be empty.")
         if not isinstance(self.expected_output, str):
-            raise EvaluationValidationError(
-                "Expected evaluation output must be text."
-            )
+            raise EvaluationValidationError("Expected evaluation output must be text.")
 
 
 class Evaluator(Protocol):
@@ -65,9 +60,7 @@ class ExactMatchEvaluator:
                 "Exact-match case sensitivity must be boolean."
             )
         if not isinstance(self.strip, bool):
-            raise EvaluationValidationError(
-                "Exact-match stripping must be boolean."
-            )
+            raise EvaluationValidationError("Exact-match stripping must be boolean.")
 
     @property
     def name(self) -> str:
@@ -139,9 +132,7 @@ class EvalCaseResult:
         )
         scores = tuple(self.scores)
         if any(not isinstance(score, EvalScore) for score in scores):
-            raise EvaluationValidationError(
-                "Evaluation case scores are invalid."
-            )
+            raise EvaluationValidationError("Evaluation case scores are invalid.")
         score_names = tuple(score.evaluator_name for score in scores)
         if len(score_names) != len(set(score_names)):
             raise EvaluationValidationError(
@@ -155,16 +146,12 @@ class EvalCaseResult:
             not isinstance(self.error_type, str)
             or _ERROR_TYPE_PATTERN.fullmatch(self.error_type) is None
         ):
-            raise EvaluationValidationError(
-                "Evaluation error type is invalid."
-            )
+            raise EvaluationValidationError("Evaluation error type is invalid.")
         object.__setattr__(self, "scores", scores)
 
     @property
     def passed(self) -> bool:
-        return self.error_type is None and all(
-            score.passed for score in self.scores
-        )
+        return self.error_type is None and all(score.passed for score in self.scores)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -185,12 +172,9 @@ class EvaluationReport:
 
     def __post_init__(self) -> None:
         evaluator_names = tuple(
-            _validate_name(name, "evaluator name")
-            for name in self.evaluator_names
+            _validate_name(name, "evaluator name") for name in self.evaluator_names
         )
-        if not evaluator_names or len(evaluator_names) != len(
-            set(evaluator_names)
-        ):
+        if not evaluator_names or len(evaluator_names) != len(set(evaluator_names)):
             raise EvaluationValidationError(
                 "Evaluation report requires unique evaluator names."
             )
@@ -198,9 +182,7 @@ class EvaluationReport:
         if not results or any(
             not isinstance(result, EvalCaseResult) for result in results
         ):
-            raise EvaluationValidationError(
-                "Evaluation report requires case results."
-            )
+            raise EvaluationValidationError("Evaluation report requires case results.")
         case_ids = tuple(result.case_id for result in results)
         if len(case_ids) != len(set(case_ids)):
             raise EvaluationValidationError(
@@ -217,8 +199,7 @@ class EvaluationReport:
             )
         if any(
             result.error_type is None
-            and {score.evaluator_name for score in result.scores}
-            != allowed_names
+            and {score.evaluator_name for score in result.scores} != allowed_names
             for result in results
         ):
             raise EvaluationValidationError(
@@ -262,9 +243,7 @@ class EvaluationReport:
 
     @property
     def failed_case_ids(self) -> tuple[str, ...]:
-        return tuple(
-            result.case_id for result in self.results if not result.passed
-        )
+        return tuple(result.case_id for result in self.results if not result.passed)
 
     @property
     def mean_scores(self) -> Mapping[str, float]:
@@ -272,10 +251,7 @@ class EvaluationReport:
         for result in self.results:
             for score in result.scores:
                 totals[score.evaluator_name] += score.value
-        return {
-            name: totals[name] / self.total_cases
-            for name in self.evaluator_names
-        }
+        return {name: totals[name] / self.total_cases for name in self.evaluator_names}
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -310,9 +286,7 @@ class EvaluationRunner:
         for evaluator in evaluator_list:
             evaluate = getattr(evaluator, "evaluate", None)
             if not callable(evaluate):
-                raise EvaluationValidationError(
-                    "Evaluation evaluator is invalid."
-                )
+                raise EvaluationValidationError("Evaluation evaluator is invalid.")
             configured.append(
                 _ConfiguredEvaluator(
                     evaluator=evaluator,
@@ -351,27 +325,17 @@ class EvaluationRunner:
         target: Callable[[str], str],
     ) -> EvaluationReport:
         if not callable(target):
-            raise EvaluationValidationError(
-                "Evaluation target must be callable."
-            )
+            raise EvaluationValidationError("Evaluation target must be callable.")
         case_list = tuple(cases)
         if not case_list:
-            raise EvaluationValidationError(
-                "Evaluation dataset cannot be empty."
-            )
+            raise EvaluationValidationError("Evaluation dataset cannot be empty.")
         if any(not isinstance(case, EvalCase) for case in case_list):
-            raise EvaluationValidationError(
-                "Evaluation dataset cases are invalid."
-            )
+            raise EvaluationValidationError("Evaluation dataset cases are invalid.")
         case_ids = tuple(case.id for case in case_list)
         if len(case_ids) != len(set(case_ids)):
-            raise EvaluationValidationError(
-                "Evaluation case IDs must be unique."
-            )
+            raise EvaluationValidationError("Evaluation case IDs must be unique.")
 
-        results = tuple(
-            self._evaluate_case(case, target) for case in case_list
-        )
+        results = tuple(self._evaluate_case(case, target) for case in case_list)
         return EvaluationReport(
             evaluator_names=self.evaluator_names,
             results=results,

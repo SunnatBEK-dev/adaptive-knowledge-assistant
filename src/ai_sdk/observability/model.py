@@ -1,10 +1,9 @@
+import math
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
-import math
-import re
 from types import MappingProxyType
-
 
 _TRACE_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 _SPAN_ID_PATTERN = re.compile(r"^[0-9a-f]{16}$")
@@ -65,13 +64,9 @@ def sanitize_trace_attributes(
     if attributes is None:
         return {}
     if not isinstance(attributes, Mapping):
-        raise TraceValidationError(
-            "Trace attributes must be an object."
-        )
+        raise TraceValidationError("Trace attributes must be an object.")
     if len(attributes) > _MAX_ATTRIBUTES:
-        raise TraceValidationError(
-            "Trace attributes exceed the configured limit."
-        )
+        raise TraceValidationError("Trace attributes exceed the configured limit.")
 
     sanitized: dict[str, TraceAttributeValue] = {}
     for key, value in attributes.items():
@@ -87,13 +82,9 @@ def sanitize_trace_attributes(
             sanitized[key] = _REDACTED
             continue
         if not isinstance(value, (str, int, float, bool)):
-            raise TraceValidationError(
-                "Trace attribute values must be scalar."
-            )
+            raise TraceValidationError("Trace attribute values must be scalar.")
         if isinstance(value, float) and not math.isfinite(value):
-            raise TraceValidationError(
-                "Trace numeric attributes must be finite."
-            )
+            raise TraceValidationError("Trace numeric attributes must be finite.")
         if isinstance(value, str):
             value = _truncate(value)
         sanitized[key] = value
@@ -147,22 +138,13 @@ def _validate_span_id(value: object) -> str:
 
 
 def _validate_span_name(value: object) -> str:
-    if (
-        not isinstance(value, str)
-        or not value.strip()
-        or len(value) > 128
-    ):
-        raise TraceValidationError(
-            "Trace span name must be a short non-empty string."
-        )
+    if not isinstance(value, str) or not value.strip() or len(value) > 128:
+        raise TraceValidationError("Trace span name must be a short non-empty string.")
     return value.strip()
 
 
 def _validate_error_type(value: object) -> str:
-    if (
-        not isinstance(value, str)
-        or _ERROR_TYPE_PATTERN.fullmatch(value) is None
-    ):
+    if not isinstance(value, str) or _ERROR_TYPE_PATTERN.fullmatch(value) is None:
         raise TraceValidationError("Trace error type is invalid.")
     return value
 
@@ -197,9 +179,7 @@ class TraceRecord:
         validated_trace_id = _validate_trace_id(trace_id)
         validated_span_id = _validate_span_id(span_id)
         validated_parent = (
-            None
-            if parent_span_id is None
-            else _validate_span_id(parent_span_id)
+            None if parent_span_id is None else _validate_span_id(parent_span_id)
         )
         validated_name = _validate_span_name(name)
         if not isinstance(category, TraceCategory):

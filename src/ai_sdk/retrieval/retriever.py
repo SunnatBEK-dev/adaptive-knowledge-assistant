@@ -1,8 +1,8 @@
 from collections.abc import Sequence
 
 from ai_sdk.embeddings.base import BaseEmbeddingClient
-from ai_sdk.retrieval.chunk import Chunk
 from ai_sdk.retrieval.catalog import IndexedDocument
+from ai_sdk.retrieval.chunk import Chunk
 from ai_sdk.retrieval.search import (
     EmbeddedChunk,
     SearchResult,
@@ -40,20 +40,12 @@ class SemanticRetriever:
         chunks: Sequence[Chunk],
     ) -> None:
         if not document_id.strip():
-            raise ValueError(
-                "Document ID cannot be empty."
-            )
+            raise ValueError("Document ID cannot be empty.")
 
         chunk_list = list(chunks)
 
-        if any(
-            chunk.document_id != document_id
-            for chunk in chunk_list
-        ):
-            raise ValueError(
-                "Indexed chunks must belong to the "
-                "requested document."
-            )
+        if any(chunk.document_id != document_id for chunk in chunk_list):
+            raise ValueError("Indexed chunks must belong to the requested document.")
 
         items = self._embed_chunks(chunk_list)
         self.vector_store.replace_document(
@@ -66,13 +58,9 @@ class SemanticRetriever:
         document_id: str,
     ) -> int:
         if not document_id.strip():
-            raise ValueError(
-                "Document ID cannot be empty."
-            )
+            raise ValueError("Document ID cannot be empty.")
 
-        return self.vector_store.delete_document(
-            document_id
-        )
+        return self.vector_store.delete_document(document_id)
 
     def list_documents(self) -> list[str]:
         return self.vector_store.document_ids()
@@ -91,22 +79,20 @@ class SemanticRetriever:
         if not chunk_list:
             return []
 
-        vectors = self.embedding_client.embed([
-            chunk.content
-            for chunk in chunk_list
-        ])
+        vectors = self.embedding_client.embed([chunk.content for chunk in chunk_list])
 
         if len(vectors) != len(chunk_list):
             raise RuntimeError(
-                "Embedding client must return one vector "
-                "for each chunk."
+                "Embedding client must return one vector for each chunk."
             )
 
-        return list(zip(
-            chunk_list,
-            vectors,
-            strict=True,
-        ))
+        return list(
+            zip(
+                chunk_list,
+                vectors,
+                strict=True,
+            )
+        )
 
     def retrieve(
         self,
@@ -114,13 +100,9 @@ class SemanticRetriever:
         k: int = 5,
     ) -> list[SearchResult]:
         if not query.strip():
-            raise ValueError(
-                "Retrieval query cannot be empty."
-            )
+            raise ValueError("Retrieval query cannot be empty.")
 
-        query_vector = (
-            self.embedding_client.embed_one(query)
-        )
+        query_vector = self.embedding_client.embed_one(query)
 
         return self.vector_store.search(
             query_vector=query_vector,

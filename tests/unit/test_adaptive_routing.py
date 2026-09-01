@@ -1,55 +1,55 @@
 import pytest
 
 from ai_sdk.agents import (
-    AICapability,
     AgentModelResponse,
     AgentRunner,
     AgentTextBlock,
     AgentWorker,
+    AICapability,
     CapabilityRouter,
     CoordinationError,
     HandoffStage,
     MultiAgentCoordinator,
+    MultiModelRoute,
     RoutingDecision,
     RoutingSignal,
     SequentialHandoffCoordinator,
-    SuperAIRoute,
+)
+from ai_sdk.llm.adaptive_multi_model import (
+    AdaptiveMultiModelClient,
+    MultiModelWorkflowClient,
 )
 from ai_sdk.llm.base import BaseToolLLMClient
-from ai_sdk.llm.super_ai import (
-    RoutedSuperAIClient,
-    SuperAIClient,
-)
 from ai_sdk.tools import ToolExecutor, ToolRegistry
 
 
 @pytest.mark.parametrize(
     ("text", "expected_route"),
     [
-        ("Salom", SuperAIRoute.FAST),
+        ("Salom", MultiModelRoute.FAST),
         (
             "Ushbu hujjatdagi manbalarni ko'rsat",
-            SuperAIRoute.CONTEXT,
+            MultiModelRoute.CONTEXT,
         ),
-        ("Nega bu yechim ishlaydi?", SuperAIRoute.REASONING),
+        ("Nega bu yechim ishlaydi?", MultiModelRoute.REASONING),
         (
             "Manbalarni chuqur tahlil qilib taqqosla",
-            SuperAIRoute.FULL,
+            MultiModelRoute.FULL,
         ),
         (
             "Retrieved context:\nPython facts",
-            SuperAIRoute.CONTEXT,
+            MultiModelRoute.CONTEXT,
         ),
         (
             "Birinchi savol? Ikkinchi savol?",
-            SuperAIRoute.REASONING,
+            MultiModelRoute.REASONING,
         ),
         (
             "1. Birinchi vazifa\n2. Ikkinchi vazifa",
-            SuperAIRoute.REASONING,
+            MultiModelRoute.REASONING,
         ),
-        ("Natijani tekshirib ber", SuperAIRoute.CONTEXT),
-        ("Loyihani tahlilini ber", SuperAIRoute.REASONING),
+        ("Natijani tekshirib ber", MultiModelRoute.CONTEXT),
+        ("Loyihani tahlilini ber", MultiModelRoute.REASONING),
     ],
 )
 def test_capability_router_selects_explainable_route(
@@ -68,7 +68,7 @@ def test_capability_router_marks_long_request_as_full():
         max_analyzed_chars=20,
     ).route("x" * 30)
 
-    assert decision.route is SuperAIRoute.FULL
+    assert decision.route is MultiModelRoute.FULL
     assert decision.signals == (RoutingSignal.LONG_REQUEST,)
     assert decision.capabilities == (
         AICapability.CONTEXT,
@@ -81,10 +81,10 @@ def test_routing_decision_and_router_validate_configuration():
     with pytest.raises(TypeError, match="route"):
         RoutingDecision("fast")
     with pytest.raises(TypeError, match="signals"):
-        RoutingDecision(SuperAIRoute.FAST, ("invalid",))
+        RoutingDecision(MultiModelRoute.FAST, ("invalid",))
     with pytest.raises(CoordinationError, match="unique"):
         RoutingDecision(
-            SuperAIRoute.FAST,
+            MultiModelRoute.FAST,
             (
                 RoutingSignal.LONG_REQUEST,
                 RoutingSignal.LONG_REQUEST,
@@ -114,9 +114,11 @@ class RouteClient(BaseToolLLMClient):
 
     def complete_tool_turn(self, messages, schemas, events):
         self.prompts.append(messages[0]["content"])
-        return AgentModelResponse([
-            AgentTextBlock(self.response),
-        ])
+        return AgentModelResponse(
+            [
+                AgentTextBlock(self.response),
+            ]
+        )
 
 
 def workflow(route):
@@ -129,26 +131,30 @@ def workflow(route):
             ToolExecutor(ToolRegistry()),
         ),
     )
-    client = SuperAIClient(SequentialHandoffCoordinator(
-        MultiAgentCoordinator([worker]),
-        [HandoffStage(
-            "final",
-            worker.name,
-            "Answer",
-        )],
-    ))
+    client = MultiModelWorkflowClient(
+        SequentialHandoffCoordinator(
+            MultiAgentCoordinator([worker]),
+            [
+                HandoffStage(
+                    "final",
+                    worker.name,
+                    "Answer",
+                )
+            ],
+        )
+    )
     return client, provider
 
 
-def routed_client():
+def adaptive_client():
     clients = {}
     providers = {}
-    for route in SuperAIRoute:
+    for route in MultiModelRoute:
         client, provider = workflow(route)
         clients[route] = client
         providers[route] = provider
     return (
-        RoutedSuperAIClient(CapabilityRouter(), clients),
+        AdaptiveMultiModelClient(CapabilityRouter(), clients),
         providers,
     )
 
@@ -156,22 +162,26 @@ def routed_client():
 @pytest.mark.parametrize(
     ("text", "expected_route"),
     [
-        ("Salom", SuperAIRoute.FAST),
-        ("Manbani ko'rsat", SuperAIRoute.CONTEXT),
-        ("Nega shunday?", SuperAIRoute.REASONING),
-        ("Manbani tahlil qil", SuperAIRoute.FULL),
+        ("Salom", MultiModelRoute.FAST),
+        ("Manbani ko'rsat", MultiModelRoute.CONTEXT),
+        ("Nega shunday?", MultiModelRoute.REASONING),
+        ("Manbani tahlil qil", MultiModelRoute.FULL),
     ],
 )
-def test_routed_super_ai_executes_only_selected_workflow(
+def test_adaptive_client_executes_only_selected_workflow(
     text,
     expected_route,
 ):
-    client, providers = routed_client()
+    client, providers = adaptive_client()
 
-    response = client.ask([{
-        "role": "user",
-        "content": text,
-    }])
+    response = client.ask(
+        [
+            {
+                "role": "user",
+                "content": text,
+            }
+        ]
+    )
 
     assert response == expected_route.value
     assert client.last_decision.route is expected_route
@@ -184,28 +194,28 @@ def test_routed_super_ai_executes_only_selected_workflow(
     )
 
 
-def test_routed_super_ai_validates_workflows_and_messages():
-    client, _ = routed_client()
+def test_adaptive_client_validates_workflows_and_messages():
+    client, _ = adaptive_client()
     valid_workflows = client.workflows
 
     with pytest.raises(TypeError, match="router"):
-        RoutedSuperAIClient(object(), valid_workflows)
+        AdaptiveMultiModelClient(object(), valid_workflows)
     with pytest.raises(TypeError, match="mapping"):
-        RoutedSuperAIClient(CapabilityRouter(), [])
+        AdaptiveMultiModelClient(CapabilityRouter(), [])
     invalid_keys = dict(valid_workflows)
-    fast_workflow = invalid_keys.pop(SuperAIRoute.FAST)
+    fast_workflow = invalid_keys.pop(MultiModelRoute.FAST)
     invalid_keys["fast"] = fast_workflow
     with pytest.raises(TypeError, match="keys"):
-        RoutedSuperAIClient(CapabilityRouter(), invalid_keys)
+        AdaptiveMultiModelClient(CapabilityRouter(), invalid_keys)
     with pytest.raises(ValueError, match="every route"):
-        RoutedSuperAIClient(
+        AdaptiveMultiModelClient(
             CapabilityRouter(),
-            {SuperAIRoute.FAST: valid_workflows[SuperAIRoute.FAST]},
+            {MultiModelRoute.FAST: valid_workflows[MultiModelRoute.FAST]},
         )
     invalid_workflows = dict(valid_workflows)
-    invalid_workflows[SuperAIRoute.FAST] = object()
-    with pytest.raises(TypeError, match="SuperAIClient"):
-        RoutedSuperAIClient(
+    invalid_workflows[MultiModelRoute.FAST] = object()
+    with pytest.raises(TypeError, match="MultiModelWorkflowClient"):
+        AdaptiveMultiModelClient(
             CapabilityRouter(),
             invalid_workflows,
         )

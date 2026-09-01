@@ -8,12 +8,11 @@ from ai_sdk.core.conversation import Conversation
 from ai_sdk.embeddings.base import BaseEmbeddingClient
 from ai_sdk.retrieval.chunker import TextChunker
 from ai_sdk.retrieval.document import Document
-from ai_sdk.retrieval.json_store import JsonVectorStore
+from ai_sdk.retrieval.json_store import JSONVectorStore
 from ai_sdk.retrieval.retriever import (
     SemanticRetriever,
 )
-from ai_sdk.storage.json import JsonConversationRepository
-
+from ai_sdk.storage.json import JSONConversationRepository
 
 pytestmark = pytest.mark.integration
 
@@ -21,10 +20,7 @@ pytestmark = pytest.mark.integration
 class KeywordEmbeddingClient(BaseEmbeddingClient):
     def embed(self, texts):
         return [
-            [1.0, 0.0]
-            if "python" in text.lower()
-            else [0.0, 1.0]
-            for text in texts
+            [1.0, 0.0] if "python" in text.lower() else [0.0, 1.0] for text in texts
         ]
 
 
@@ -45,7 +41,7 @@ def test_rag_reuses_persisted_index_after_restart(tmp_path):
     embedding_client = KeywordEmbeddingClient()
     first_retriever = SemanticRetriever(
         embedding_client=embedding_client,
-        vector_store=JsonVectorStore(vector_path),
+        vector_store=JSONVectorStore(vector_path),
     )
     document = Document(
         id="doc_persistent_rag",
@@ -62,7 +58,7 @@ def test_rag_reuses_persisted_index_after_restart(tmp_path):
 
     restarted_retriever = SemanticRetriever(
         embedding_client=embedding_client,
-        vector_store=JsonVectorStore(vector_path),
+        vector_store=JSONVectorStore(vector_path),
     )
     conversation = Conversation()
     client = RecordingLLMClient()
@@ -70,23 +66,17 @@ def test_rag_reuses_persisted_index_after_restart(tmp_path):
         conversation=conversation,
         prompt_builder=PromptBuilder(conversation),
         client=client,
-        repository=JsonConversationRepository(
-            tmp_path / "chat.json"
-        ),
+        repository=JSONConversationRepository(tmp_path / "chat.json"),
         chunker=TextChunker(),
         retriever=restarted_retriever,
         retrieval_k=1,
     )
 
-    answer = manager.send_message(
-        "How do Python functions work?"
-    )
+    answer = manager.send_message("How do Python functions work?")
 
     assert answer == "Grounded after restart"
     assert len(chunks) == 2
-    assert "Python functions" in (
-        client.received_messages[-1]["content"]
-    )
+    assert "Python functions" in (client.received_messages[-1]["content"])
 
 
 def test_reindex_and_delete_document_persist_after_restart(
@@ -99,7 +89,7 @@ def test_reindex_and_delete_document_persist_after_restart(
     )
     retriever = SemanticRetriever(
         embedding_client=KeywordEmbeddingClient(),
-        vector_store=JsonVectorStore(vector_path),
+        vector_store=JSONVectorStore(vector_path),
     )
     original = Document(
         id="doc_lifecycle",
@@ -118,20 +108,21 @@ def test_reindex_and_delete_document_persist_after_restart(
     )
     restarted = SemanticRetriever(
         embedding_client=KeywordEmbeddingClient(),
-        vector_store=JsonVectorStore(vector_path),
+        vector_store=JSONVectorStore(vector_path),
     )
     restarted.index_document(
         updated.id,
         updated_chunks,
     )
 
-    after_reindex = JsonVectorStore(vector_path)
+    after_reindex = JSONVectorStore(vector_path)
     assert after_reindex.count() == 1
-    assert after_reindex.search(
-        [0.0, 1.0],
-        k=1,
-    )[0].chunk.id == updated_chunks[0].id
-    assert restarted.delete_document(
-        updated.id
-    ) == 1
-    assert JsonVectorStore(vector_path).count() == 0
+    assert (
+        after_reindex.search(
+            [0.0, 1.0],
+            k=1,
+        )[0].chunk.id
+        == updated_chunks[0].id
+    )
+    assert restarted.delete_document(updated.id) == 1
+    assert JSONVectorStore(vector_path).count() == 0

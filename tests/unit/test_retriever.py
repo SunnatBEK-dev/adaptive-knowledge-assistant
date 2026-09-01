@@ -17,10 +17,7 @@ class RecordingEmbeddingClient(BaseEmbeddingClient):
 
     def embed(self, texts):
         self.calls.append(list(texts))
-        return [
-            self.vectors[text]
-            for text in texts
-        ]
+        return [self.vectors[text] for text in texts]
 
 
 class BrokenEmbeddingClient(BaseEmbeddingClient):
@@ -38,11 +35,13 @@ def make_chunk(chunk_id, content, index):
 
 
 def test_retriever_indexes_chunks_and_searches_query():
-    embeddings = RecordingEmbeddingClient({
-        "Python": [1.0, 0.0],
-        "Cooking": [0.0, 1.0],
-        "Python question": [1.0, 0.0],
-    })
+    embeddings = RecordingEmbeddingClient(
+        {
+            "Python": [1.0, 0.0],
+            "Cooking": [0.0, 1.0],
+            "Python question": [1.0, 0.0],
+        }
+    )
     store = InMemoryVectorStore()
     retriever = SemanticRetriever(embeddings, store)
     python_chunk = make_chunk(
@@ -90,9 +89,7 @@ def test_retriever_rejects_embedding_cardinality_mismatch():
     )
 
     with pytest.raises(RuntimeError, match="each chunk"):
-        retriever.index([
-            make_chunk("chunk_one", "One", 0)
-        ])
+        retriever.index([make_chunk("chunk_one", "One", 0)])
 
     assert store.count() == 0
 
@@ -108,10 +105,12 @@ def test_retriever_rejects_blank_query():
 
 
 def test_retriever_replaces_and_deletes_document_index():
-    embeddings = RecordingEmbeddingClient({
-        "Old content": [1.0, 0.0],
-        "New content": [0.0, 1.0],
-    })
+    embeddings = RecordingEmbeddingClient(
+        {
+            "Old content": [1.0, 0.0],
+            "New content": [0.0, 1.0],
+        }
+    )
     store = InMemoryVectorStore()
     retriever = SemanticRetriever(embeddings, store)
     old_chunk = make_chunk(
@@ -135,28 +134,27 @@ def test_retriever_replaces_and_deletes_document_index():
     )
 
     assert store.count() == 1
-    assert retriever.list_documents() == [
-        "doc_retriever"
-    ]
-    assert store.search(
-        [0.0, 1.0],
-        k=1,
-    )[0].chunk is new_chunk
-    assert retriever.delete_document(
-        "doc_retriever"
-    ) == 1
-    assert retriever.delete_document(
-        "doc_retriever"
-    ) == 0
+    assert retriever.list_documents() == ["doc_retriever"]
+    assert (
+        store.search(
+            [0.0, 1.0],
+            k=1,
+        )[0].chunk
+        is new_chunk
+    )
+    assert retriever.delete_document("doc_retriever") == 1
+    assert retriever.delete_document("doc_retriever") == 0
     assert retriever.list_documents() == []
 
 
 def test_failed_reindex_preserves_existing_document():
     store = InMemoryVectorStore()
     retriever = SemanticRetriever(
-        RecordingEmbeddingClient({
-            "Old content": [1.0, 0.0],
-        }),
+        RecordingEmbeddingClient(
+            {
+                "Old content": [1.0, 0.0],
+            }
+        ),
         store,
     )
     old_chunk = make_chunk(
@@ -182,10 +180,13 @@ def test_failed_reindex_preserves_existing_document():
         )
 
     assert store.count() == 1
-    assert store.search(
-        [1.0, 0.0],
-        k=1,
-    )[0].chunk is old_chunk
+    assert (
+        store.search(
+            [1.0, 0.0],
+            k=1,
+        )[0].chunk
+        is old_chunk
+    )
 
 
 def test_retriever_rejects_chunk_from_another_document():

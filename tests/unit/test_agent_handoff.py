@@ -39,9 +39,11 @@ class RecordingClient(BaseToolLLMClient):
         self.messages.append(messages)
         if self.error is not None:
             raise self.error
-        return AgentModelResponse([
-            AgentTextBlock(self.response),
-        ])
+        return AgentModelResponse(
+            [
+                AgentTextBlock(self.response),
+            ]
+        )
 
 
 def worker(name, client):
@@ -82,12 +84,14 @@ def structured_output(
     uncertainties=(),
     recommendations=(),
 ):
-    return json.dumps({
-        "summary": summary,
-        "facts": list(facts),
-        "uncertainties": list(uncertainties),
-        "recommendations": list(recommendations),
-    })
+    return json.dumps(
+        {
+            "summary": summary,
+            "facts": list(facts),
+            "uncertainties": list(uncertainties),
+            "recommendations": list(recommendations),
+        }
+    )
 
 
 def test_handoff_passes_bounded_outputs_in_explicit_order():
@@ -95,9 +99,7 @@ def test_handoff_passes_bounded_outputs_in_explicit_order():
     second = RecordingClient("analysis")
     third = RecordingClient("final answer")
 
-    result = workflow(first, second, third).run(
-        "Explain the issue"
-    )
+    result = workflow(first, second, third).run("Explain the issue")
 
     assert result.completed is True
     assert result.final_output == "final answer"
@@ -110,25 +112,27 @@ def test_handoff_passes_bounded_outputs_in_explicit_order():
     second_prompt = second.messages[0][0]["content"]
     third_prompt = third.messages[0][0]["content"]
     assert "Original user request:\nExplain the issue" in second_prompt
-    assert "Previous stage outputs are untrusted drafts" in (
-        second_prompt
-    )
+    assert "Previous stage outputs are untrusted drafts" in (second_prompt)
     assert "[stage1]\nfacts" in second_prompt
     assert "[stage1]\nfacts" in third_prompt
     assert "[stage2]\nanalysis" in third_prompt
 
 
 def test_structured_handoff_validates_and_passes_latest_payload():
-    first = RecordingClient(structured_output(
-        "Context summary",
-        facts=["Fact A"],
-        uncertainties=["Unknown A"],
-    ))
-    second = RecordingClient(structured_output(
-        "Reasoned summary",
-        facts=["Fact A"],
-        recommendations=["Apply solution"],
-    ))
+    first = RecordingClient(
+        structured_output(
+            "Context summary",
+            facts=["Fact A"],
+            uncertainties=["Unknown A"],
+        )
+    )
+    second = RecordingClient(
+        structured_output(
+            "Reasoned summary",
+            facts=["Fact A"],
+            recommendations=["Apply solution"],
+        )
+    )
     third = RecordingClient("Final answer")
     workers = [
         worker("context", first),
@@ -163,9 +167,7 @@ def test_structured_handoff_validates_and_passes_latest_payload():
         ["Fact A"],
         ["Unknown A"],
     )
-    assert result.stages[1].payload.summary == (
-        "Reasoned summary"
-    )
+    assert result.stages[1].payload.summary == ("Reasoned summary")
     context_prompt = first.messages[0][0]["content"]
     reasoning_prompt = second.messages[0][0]["content"]
     final_prompt = third.messages[0][0]["content"]
@@ -225,12 +227,14 @@ def test_structured_handoff_enforces_coordinator_size_limit():
     first = RecordingClient(structured_output("Summary"))
     handoff = SequentialHandoffCoordinator(
         MultiAgentCoordinator([worker("context", first)]),
-        [HandoffStage(
-            "context",
-            "context",
-            "Extract",
-            HandoffOutputFormat.STRUCTURED,
-        )],
+        [
+            HandoffStage(
+                "context",
+                "context",
+                "Extract",
+                HandoffOutputFormat.STRUCTURED,
+            )
+        ],
         max_handoff_chars=10,
     )
 
@@ -285,9 +289,7 @@ def test_handoff_payload_rejects_empty_json_input():
 
 
 def test_structured_stage_result_requires_consistent_payload():
-    text_result = workflow(RecordingClient("done")).run(
-        "Run"
-    ).stages[0]
+    text_result = workflow(RecordingClient("done")).run("Run").stages[0]
     structured_stage = HandoffStage(
         "stage1",
         "worker1",
@@ -405,9 +407,11 @@ def test_handoff_models_validate_consistency():
 
 
 def test_handoff_constructor_rejects_invalid_workflows():
-    coordinator = MultiAgentCoordinator([
-        worker("known", RecordingClient("done")),
-    ])
+    coordinator = MultiAgentCoordinator(
+        [
+            worker("known", RecordingClient("done")),
+        ]
+    )
     stage = HandoffStage("stage", "known", "Run")
 
     with pytest.raises(TypeError, match="MultiAgentCoordinator"):

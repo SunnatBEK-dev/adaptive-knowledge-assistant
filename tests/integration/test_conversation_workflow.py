@@ -2,8 +2,7 @@ import pytest
 
 from ai_sdk.application.conversation_manager import ConversationManager
 from ai_sdk.context.prompt_builder import PromptBuilder
-from ai_sdk.storage.json import JsonConversationRepository
-
+from ai_sdk.storage.json import JSONConversationRepository
 
 pytestmark = pytest.mark.integration
 
@@ -18,7 +17,7 @@ class DeterministicClient:
 
 
 def test_streamed_conversation_survives_repository_round_trip(tmp_path):
-    repository = JsonConversationRepository(tmp_path / "chat.json")
+    repository = JSONConversationRepository(tmp_path / "chat.json")
     conversation = repository.load()
     manager = ConversationManager(
         conversation=conversation,

@@ -36,9 +36,11 @@ class RecordingClient(BaseToolLLMClient):
         self.prompts.append(messages[0]["content"])
         if self.error is not None:
             raise self.error
-        return AgentModelResponse([
-            AgentTextBlock(self.response),
-        ])
+        return AgentModelResponse(
+            [
+                AgentTextBlock(self.response),
+            ]
+        )
 
 
 def worker(name, client):
@@ -53,23 +55,29 @@ def worker(name, client):
 
 
 def payload(summary, *, facts=()):
-    return json.dumps({
-        "summary": summary,
-        "facts": list(facts),
-        "uncertainties": [],
-        "recommendations": [],
-    })
+    return json.dumps(
+        {
+            "summary": summary,
+            "facts": list(facts),
+            "uncertainties": [],
+            "recommendations": [],
+        }
+    )
 
 
 def test_dependency_workflow_uses_topological_order_and_inputs():
-    context = RecordingClient(payload(
-        "Context summary",
-        facts=["Fact A"],
-    ))
-    reasoning = RecordingClient(payload(
-        "Reasoning summary",
-        facts=["Fact A"],
-    ))
+    context = RecordingClient(
+        payload(
+            "Context summary",
+            facts=["Fact A"],
+        )
+    )
+    reasoning = RecordingClient(
+        payload(
+            "Reasoning summary",
+            facts=["Fact A"],
+        )
+    )
     final = RecordingClient("Final answer")
     workers = [
         worker("writer", final),
@@ -107,9 +115,11 @@ def test_dependency_workflow_uses_topological_order_and_inputs():
     assert result.completed is True
     assert result.final_output == "Final answer"
     assert result.blocked_stage_ids == ()
-    assert [
-        stage.id for stage in workflow.execution_stages
-    ] == ["context", "reasoning", "final"]
+    assert [stage.id for stage in workflow.execution_stages] == [
+        "context",
+        "reasoning",
+        "final",
+    ]
     assert [stage.stage.id for stage in result.stages] == [
         "context",
         "reasoning",
@@ -160,10 +170,7 @@ def test_failed_branch_blocks_dependents_but_not_independent_stage():
         "failed",
         "independent",
     ]
-    assert (
-        result.stages[1].task_result.status
-        is AgentTaskStatus.COMPLETED
-    )
+    assert result.stages[1].task_result.status is AgentTaskStatus.COMPLETED
     assert independent.prompts
     assert final.prompts == []
 
@@ -172,10 +179,12 @@ def test_oversized_dependency_input_fails_before_worker_runs():
     source = RecordingClient("large dependency output")
     target = RecordingClient("must not run")
     workflow = DependencyHandoffCoordinator(
-        MultiAgentCoordinator([
-            worker("source", source),
-            worker("target", target),
-        ]),
+        MultiAgentCoordinator(
+            [
+                worker("source", source),
+                worker("target", target),
+            ]
+        ),
         [
             HandoffStage("source", "source", "Produce"),
             HandoffStage(
@@ -200,19 +209,23 @@ def test_oversized_dependency_input_fails_before_worker_runs():
 
 
 def test_dependency_graph_rejects_unknown_nodes_and_cycles():
-    coordinator = MultiAgentCoordinator([
-        worker("worker", RecordingClient("done")),
-    ])
+    coordinator = MultiAgentCoordinator(
+        [
+            worker("worker", RecordingClient("done")),
+        ]
+    )
 
     with pytest.raises(CoordinationError, match="Unknown"):
         DependencyHandoffCoordinator(
             coordinator,
-            [HandoffStage(
-                "stage",
-                "worker",
-                "Run",
-                depends_on=("missing",),
-            )],
+            [
+                HandoffStage(
+                    "stage",
+                    "worker",
+                    "Run",
+                    depends_on=("missing",),
+                )
+            ],
         )
     with pytest.raises(CoordinationError, match="cycle"):
         DependencyHandoffCoordinator(
@@ -235,9 +248,11 @@ def test_dependency_graph_rejects_unknown_nodes_and_cycles():
 
 
 def test_dependency_stage_and_result_validation():
-    coordinator = MultiAgentCoordinator([
-        worker("worker", RecordingClient("done")),
-    ])
+    coordinator = MultiAgentCoordinator(
+        [
+            worker("worker", RecordingClient("done")),
+        ]
+    )
     dependent = HandoffStage(
         "dependent",
         "worker",
@@ -275,10 +290,14 @@ def test_dependency_stage_and_result_validation():
         DependencyHandoffResult([], 1, [None])
     with pytest.raises(CoordinationError, match="unique"):
         DependencyHandoffResult([], 2, ["one", "one"])
-    executed = SequentialHandoffCoordinator(
-        coordinator,
-        [HandoffStage("stage", "worker", "Run")],
-    ).run("Run").stages[0]
+    executed = (
+        SequentialHandoffCoordinator(
+            coordinator,
+            [HandoffStage("stage", "worker", "Run")],
+        )
+        .run("Run")
+        .stages[0]
+    )
     with pytest.raises(CoordinationError, match="also be blocked"):
         DependencyHandoffResult([executed], 2, ["stage"])
     with pytest.raises(CoordinationError, match="stage count"):
@@ -288,9 +307,11 @@ def test_dependency_stage_and_result_validation():
 @pytest.mark.parametrize("input_value", ["", "   ", None])
 def test_dependency_workflow_rejects_empty_request(input_value):
     workflow = DependencyHandoffCoordinator(
-        MultiAgentCoordinator([
-            worker("worker", RecordingClient("done")),
-        ]),
+        MultiAgentCoordinator(
+            [
+                worker("worker", RecordingClient("done")),
+            ]
+        ),
         [HandoffStage("stage", "worker", "Run")],
     )
 

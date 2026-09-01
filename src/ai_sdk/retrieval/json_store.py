@@ -22,7 +22,7 @@ from ai_sdk.retrieval.vector_store import (
 )
 
 
-class JsonVectorStore(BaseVectorStore):
+class JSONVectorStore(BaseVectorStore):
     """Persist embedded chunks in a versioned local JSON file."""
 
     FORMAT_VERSION = 1
@@ -85,9 +85,7 @@ class JsonVectorStore(BaseVectorStore):
         previous_dimension = self._dimension
 
         try:
-            self._delete_document_in_memory(
-                document_id
-            )
+            self._delete_document_in_memory(document_id)
 
             for chunk, vector in item_list:
                 self._add_in_memory(chunk, vector)
@@ -103,14 +101,8 @@ class JsonVectorStore(BaseVectorStore):
         query_vector: EmbeddingVector,
         k: int = 5,
     ) -> list[SearchResult]:
-        if (
-            self._dimension is not None
-            and len(query_vector) != self._dimension
-        ):
-            raise ValueError(
-                "Query vector dimension does not match "
-                "the vector store."
-            )
+        if self._dimension is not None and len(query_vector) != self._dimension:
+            raise ValueError("Query vector dimension does not match the vector store.")
 
         return top_k_search(
             query_vector=query_vector,
@@ -145,10 +137,7 @@ class JsonVectorStore(BaseVectorStore):
     ) -> list[SearchResult]:
         return bm25_search(
             query=query,
-            candidates=[
-                chunk
-                for chunk, _ in self._items.values()
-            ],
+            candidates=[chunk for chunk, _ in self._items.values()],
             k=k,
         )
 
@@ -159,11 +148,7 @@ class JsonVectorStore(BaseVectorStore):
         self._validate_document_id(document_id)
         previous_items = self._items.copy()
         previous_dimension = self._dimension
-        deleted_count = (
-            self._delete_document_in_memory(
-                document_id
-            )
-        )
+        deleted_count = self._delete_document_in_memory(document_id)
 
         if deleted_count == 0:
             return 0
@@ -180,10 +165,7 @@ class JsonVectorStore(BaseVectorStore):
     def document_catalog(
         self,
     ) -> list[IndexedDocument]:
-        return build_document_catalog(
-            chunk
-            for chunk, _ in self._items.values()
-        )
+        return build_document_catalog(chunk for chunk, _ in self._items.values())
 
     def clear(self) -> None:
         previous_items = self._items.copy()
@@ -224,17 +206,11 @@ class JsonVectorStore(BaseVectorStore):
         document_id: str,
         items: Sequence[EmbeddedChunk],
     ) -> None:
-        JsonVectorStore._validate_document_id(
-            document_id
-        )
+        JSONVectorStore._validate_document_id(document_id)
 
-        if any(
-            chunk.document_id != document_id
-            for chunk, _ in items
-        ):
+        if any(chunk.document_id != document_id for chunk, _ in items):
             raise ValueError(
-                "Replacement chunks must belong to the "
-                "requested document."
+                "Replacement chunks must belong to the requested document."
             )
 
     @staticmethod
@@ -242,9 +218,7 @@ class JsonVectorStore(BaseVectorStore):
         document_id: str,
     ) -> None:
         if not document_id.strip():
-            raise ValueError(
-                "Document ID cannot be empty."
-            )
+            raise ValueError("Document ID cannot be empty.")
 
     def _add_in_memory(
         self,
@@ -254,13 +228,9 @@ class JsonVectorStore(BaseVectorStore):
         stored_vector = self._validate_vector(vector)
         dimension = len(stored_vector)
 
-        if (
-            self._dimension is not None
-            and dimension != self._dimension
-        ):
+        if self._dimension is not None and dimension != self._dimension:
             raise ValueError(
-                "Embedding vector dimension does not match "
-                "the vector store."
+                "Embedding vector dimension does not match the vector store."
             )
 
         if self._dimension is None:
@@ -276,27 +246,15 @@ class JsonVectorStore(BaseVectorStore):
         vector: EmbeddingVector,
     ) -> EmbeddingVector:
         if not vector:
-            raise ValueError(
-                "Embedding vector cannot be empty."
-            )
+            raise ValueError("Embedding vector cannot be empty.")
 
         try:
-            stored_vector = [
-                float(value)
-                for value in vector
-            ]
+            stored_vector = [float(value) for value in vector]
         except (TypeError, ValueError) as error:
-            raise ValueError(
-                "Embedding vector must contain numbers."
-            ) from error
+            raise ValueError("Embedding vector must contain numbers.") from error
 
-        if not all(
-            isfinite(value)
-            for value in stored_vector
-        ):
-            raise ValueError(
-                "Embedding vector values must be finite."
-            )
+        if not all(isfinite(value) for value in stored_vector):
+            raise ValueError("Embedding vector values must be finite.")
 
         return stored_vector
 
@@ -311,42 +269,30 @@ class JsonVectorStore(BaseVectorStore):
             ) as file:
                 payload = json.load(file)
         except (JSONDecodeError, UnicodeDecodeError) as error:
-            raise ValueError(
-                "Vector store file contains invalid JSON."
-            ) from error
+            raise ValueError("Vector store file contains invalid JSON.") from error
 
         try:
             self._restore(payload)
         except (KeyError, TypeError, ValueError) as error:
-            raise ValueError(
-                "Vector store file has an invalid format."
-            ) from error
+            raise ValueError("Vector store file has an invalid format.") from error
 
     def _restore(self, payload: object) -> None:
         if not isinstance(payload, dict):
-            raise ValueError(
-                "Vector store payload must be an object."
-            )
+            raise ValueError("Vector store payload must be an object.")
 
         if payload.get("version") != self.FORMAT_VERSION:
-            raise ValueError(
-                "Vector store version is not supported."
-            )
+            raise ValueError("Vector store version is not supported.")
 
         records = payload.get("items")
 
         if not isinstance(records, list):
-            raise ValueError(
-                "Vector store items must be a list."
-            )
+            raise ValueError("Vector store items must be a list.")
 
         for record in records:
             chunk, vector = self._parse_record(record)
 
             if chunk.id in self._items:
-                raise ValueError(
-                    "Vector store chunk IDs must be unique."
-                )
+                raise ValueError("Vector store chunk IDs must be unique.")
 
             self._add_in_memory(chunk, vector)
 
@@ -355,22 +301,16 @@ class JsonVectorStore(BaseVectorStore):
         record: object,
     ) -> EmbeddedChunk:
         if not isinstance(record, dict):
-            raise ValueError(
-                "Vector store item must be an object."
-            )
+            raise ValueError("Vector store item must be an object.")
 
         chunk_data = record.get("chunk")
         vector = record.get("vector")
 
         if not isinstance(chunk_data, dict):
-            raise ValueError(
-                "Vector store chunk must be an object."
-            )
+            raise ValueError("Vector store chunk must be an object.")
 
         if not isinstance(vector, list):
-            raise ValueError(
-                "Vector store vector must be a list."
-            )
+            raise ValueError("Vector store vector must be a list.")
 
         chunk = Chunk(
             id=chunk_data["id"],
@@ -425,8 +365,5 @@ class JsonVectorStore(BaseVectorStore):
 
             temporary_path.replace(self.file_path)
         finally:
-            if (
-                temporary_path is not None
-                and temporary_path.exists()
-            ):
+            if temporary_path is not None and temporary_path.exists():
                 temporary_path.unlink()

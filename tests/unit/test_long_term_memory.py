@@ -3,15 +3,13 @@ import json
 import pytest
 
 from ai_sdk.memory import (
-    JsonMemoryStore,
+    JSONMemoryStore,
     LongTermMemory,
 )
 
 
 def test_long_term_memory_creates_normalized_identity():
-    memory = LongTermMemory.create(
-        "  Preferred language is Uzbek.  "
-    )
+    memory = LongTermMemory.create("  Preferred language is Uzbek.  ")
 
     assert memory.id.startswith("mem_")
     assert memory.content == "Preferred language is Uzbek."
@@ -45,10 +43,10 @@ def test_json_memory_store_persists_searches_and_deletes(
         "mem_food",
         "Favorite food is plov",
     )
-    store = JsonMemoryStore(file_path)
+    store = JSONMemoryStore(file_path)
     store.add(language)
     store.add(food)
-    restarted = JsonMemoryStore(file_path)
+    restarted = JSONMemoryStore(file_path)
 
     results = restarted.search(
         "Which language is preferred?",
@@ -63,16 +61,16 @@ def test_json_memory_store_persists_searches_and_deletes(
     assert restarted.search("What is this?", k=2) == []
     assert restarted.delete("mem_language") is True
     assert restarted.delete("mem_language") is False
-    assert JsonMemoryStore(file_path).list_memories() == [food]
+    assert JSONMemoryStore(file_path).list_memories() == [food]
     restarted.clear()
-    assert JsonMemoryStore(file_path).count() == 0
+    assert JSONMemoryStore(file_path).count() == 0
 
 
 def test_json_memory_store_rolls_back_failed_write(
     tmp_path,
     monkeypatch,
 ):
-    store = JsonMemoryStore(tmp_path / "memories.json")
+    store = JSONMemoryStore(tmp_path / "memories.json")
     existing = LongTermMemory("mem_existing", "Existing")
     store.add(existing)
 
@@ -91,7 +89,7 @@ def test_json_memory_store_rolls_back_failed_delete_and_clear(
     tmp_path,
     monkeypatch,
 ):
-    store = JsonMemoryStore(tmp_path / "memories.json")
+    store = JSONMemoryStore(tmp_path / "memories.json")
     existing = LongTermMemory("mem_existing", "Existing")
     store.add(existing)
 
@@ -121,10 +119,12 @@ def test_json_memory_store_rolls_back_failed_delete_and_clear(
             "invalid format",
         ),
         (
-            json.dumps({
-                "version": 1,
-                "memories": [{"id": "", "content": "x"}],
-            }),
+            json.dumps(
+                {
+                    "version": 1,
+                    "memories": [{"id": "", "content": "x"}],
+                }
+            ),
             "invalid format",
         ),
         (
@@ -136,13 +136,15 @@ def test_json_memory_store_rolls_back_failed_delete_and_clear(
             "invalid format",
         ),
         (
-            json.dumps({
-                "version": 1,
-                "memories": [
-                    {"id": "mem_one", "content": "One"},
-                    {"id": "mem_one", "content": "Duplicate"},
-                ],
-            }),
+            json.dumps(
+                {
+                    "version": 1,
+                    "memories": [
+                        {"id": "mem_one", "content": "One"},
+                        {"id": "mem_one", "content": "Duplicate"},
+                    ],
+                }
+            ),
             "invalid format",
         ),
     ],
@@ -156,11 +158,11 @@ def test_json_memory_store_rejects_invalid_file(
     file_path.write_text(payload, encoding="utf-8")
 
     with pytest.raises(ValueError, match=message):
-        JsonMemoryStore(file_path)
+        JSONMemoryStore(file_path)
 
 
 def test_json_memory_store_rejects_blank_delete_id(tmp_path):
-    store = JsonMemoryStore(tmp_path / "memories.json")
+    store = JSONMemoryStore(tmp_path / "memories.json")
 
     with pytest.raises(ValueError, match="ID"):
         store.delete(" ")

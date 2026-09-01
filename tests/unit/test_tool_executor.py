@@ -4,8 +4,8 @@ import pytest
 
 from ai_sdk.observability import (
     InMemoryTraceCollector,
-    TraceStatus,
     Tracer,
+    TraceStatus,
 )
 from ai_sdk.tools import (
     ToolCall,
@@ -43,9 +43,7 @@ def test_registry_exposes_schemas_in_registration_order():
 
     assert registry.count() == 1
     assert registry.schemas() == [schema]
-    assert registry.provider_schemas() == [
-        schema.to_json_schema()
-    ]
+    assert registry.provider_schemas() == [schema.to_json_schema()]
     assert registry.get("missing") is None
 
 
@@ -73,11 +71,13 @@ def test_executor_validates_executes_and_serializes_output():
         return {"total": left + right}
 
     registry.register(make_schema(), add)
-    result = ToolExecutor(registry).execute(ToolCall(
-        id="call_one",
-        name="add",
-        arguments={"left": 2, "right": 3},
-    ))
+    result = ToolExecutor(registry).execute(
+        ToolCall(
+            id="call_one",
+            name="add",
+            arguments={"left": 2, "right": 3},
+        )
+    )
 
     assert result.is_error is False
     assert json.loads(result.content) == {"total": 5}
@@ -92,11 +92,13 @@ def test_executor_does_not_call_handler_for_invalid_arguments():
         lambda **arguments: calls.append(arguments),
     )
 
-    result = ToolExecutor(registry).execute(ToolCall(
-        "call_invalid",
-        "add",
-        {"left": "two", "right": 3},
-    ))
+    result = ToolExecutor(registry).execute(
+        ToolCall(
+            "call_invalid",
+            "add",
+            {"left": "two", "right": 3},
+        )
+    )
 
     assert result.is_error is True
     assert "integer" in result.content
@@ -104,11 +106,13 @@ def test_executor_does_not_call_handler_for_invalid_arguments():
 
 
 def test_executor_returns_error_for_unknown_tool():
-    result = ToolExecutor(ToolRegistry()).execute(ToolCall(
-        "call_unknown",
-        "missing",
-        {},
-    ))
+    result = ToolExecutor(ToolRegistry()).execute(
+        ToolCall(
+            "call_unknown",
+            "missing",
+            {},
+        )
+    )
 
     assert result.is_error is True
     assert result.content == "Unknown tool: missing"
@@ -121,31 +125,31 @@ def test_executor_contains_handler_and_serialization_errors():
         raise RuntimeError("private detail")
 
     failing_registry.register(make_schema(), fail)
-    failed = ToolExecutor(failing_registry).execute(ToolCall(
-        "call_failed",
-        "add",
-        {"left": 1, "right": 2},
-    ))
+    failed = ToolExecutor(failing_registry).execute(
+        ToolCall(
+            "call_failed",
+            "add",
+            {"left": 1, "right": 2},
+        )
+    )
     invalid_output_registry = ToolRegistry()
     invalid_output_registry.register(
         make_schema(),
         lambda left, right: {object()},
     )
-    invalid_output = ToolExecutor(
-        invalid_output_registry
-    ).execute(ToolCall(
-        "call_output",
-        "add",
-        {"left": 1, "right": 2},
-    ))
+    invalid_output = ToolExecutor(invalid_output_registry).execute(
+        ToolCall(
+            "call_output",
+            "add",
+            {"left": 1, "right": 2},
+        )
+    )
 
     assert failed.is_error is True
     assert failed.content == "Tool execution failed: RuntimeError"
     assert "private detail" not in failed.content
     assert invalid_output.is_error is True
-    assert invalid_output.content == (
-        "Tool execution failed: TypeError"
-    )
+    assert invalid_output.content == ("Tool execution failed: TypeError")
 
 
 @pytest.mark.parametrize(
@@ -173,11 +177,13 @@ def test_executor_preserves_plain_string_output():
         lambda left, right: "done",
     )
 
-    result = ToolExecutor(registry).execute(ToolCall(
-        "call_string",
-        "add",
-        {"left": 1, "right": 2},
-    ))
+    result = ToolExecutor(registry).execute(
+        ToolCall(
+            "call_string",
+            "add",
+            {"left": 1, "right": 2},
+        )
+    )
 
     assert result.content == "done"
 
@@ -189,9 +195,7 @@ def test_executor_traces_safe_success_and_contained_error_metadata():
     registry.register(make_schema(), lambda left, right: left + right)
     executor = ToolExecutor(registry, tracer=tracer)
 
-    success = executor.execute(
-        ToolCall("call_ok", "add", {"left": 1, "right": 2})
-    )
+    success = executor.execute(ToolCall("call_ok", "add", {"left": 1, "right": 2}))
     failure = executor.execute(
         ToolCall("call_bad", "add", {"left": "secret", "right": 2})
     )

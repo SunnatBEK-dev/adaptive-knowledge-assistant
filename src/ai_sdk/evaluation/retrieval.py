@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from math import fsum
 from typing import Protocol
 
@@ -16,39 +16,36 @@ class _Retriever(Protocol):
 
 @dataclass(frozen=True)
 class RetrievalEvalCase:
-    """A query and the chunk IDs that count as relevant."""
+    """A query and stable chunk or document relevance labels."""
 
     query: str
-    expected_chunk_ids: frozenset[str]
+    expected_chunk_ids: frozenset[str] = field(default_factory=frozenset)
+    expected_document_ids: frozenset[str] = field(default_factory=frozenset)
 
     def __post_init__(self) -> None:
         if not self.query.strip():
-            raise ValueError(
-                "Evaluation query cannot be empty."
-            )
+            raise ValueError("Evaluation query cannot be empty.")
 
-        expected_chunk_ids = frozenset(
-            self.expected_chunk_ids
-        )
+        expected_chunk_ids = frozenset(self.expected_chunk_ids)
+        expected_document_ids = frozenset(self.expected_document_ids)
 
-        if not expected_chunk_ids:
-            raise ValueError(
-                "Evaluation case must have at least one "
-                "expected chunk ID."
-            )
+        if not expected_chunk_ids and not expected_document_ids:
+            raise ValueError("Evaluation case must have at least one expected label.")
 
-        if any(
-            not chunk_id.strip()
-            for chunk_id in expected_chunk_ids
-        ):
-            raise ValueError(
-                "Expected chunk IDs cannot be empty."
-            )
+        if any(not chunk_id.strip() for chunk_id in expected_chunk_ids):
+            raise ValueError("Expected chunk IDs cannot be empty.")
+        if any(not document_id.strip() for document_id in expected_document_ids):
+            raise ValueError("Expected document IDs cannot be empty.")
 
         object.__setattr__(
             self,
             "expected_chunk_ids",
             expected_chunk_ids,
+        )
+        object.__setattr__(
+            self,
+            "expected_document_ids",
+            expected_document_ids,
         )
 
 
@@ -87,59 +84,36 @@ class RetrievalComparisonReport:
 
     def __post_init__(self) -> None:
         if self.baseline.k != self.candidate.k:
-            raise ValueError(
-                "Compared retrieval reports must use the same top-k."
-            )
+            raise ValueError("Compared retrieval reports must use the same top-k.")
 
-        baseline_cases = tuple(
-            result.case
-            for result in self.baseline.results
-        )
-        candidate_cases = tuple(
-            result.case
-            for result in self.candidate.results
-        )
+        baseline_cases = tuple(result.case for result in self.baseline.results)
+        candidate_cases = tuple(result.case for result in self.candidate.results)
 
         if baseline_cases != candidate_cases:
-            raise ValueError(
-                "Compared retrieval reports must use the same dataset."
-            )
+            raise ValueError("Compared retrieval reports must use the same dataset.")
 
     @property
     def hit_rate_delta(self) -> float:
-        return (
-            self.candidate.hit_rate
-            - self.baseline.hit_rate
-        )
+        return self.candidate.hit_rate - self.baseline.hit_rate
 
     @property
     def mean_recall_delta(self) -> float:
-        return (
-            self.candidate.mean_recall
-            - self.baseline.mean_recall
-        )
+        return self.candidate.mean_recall - self.baseline.mean_recall
 
     @property
     def mean_reciprocal_rank_delta(self) -> float:
-        return (
-            self.candidate.mean_reciprocal_rank
-            - self.baseline.mean_reciprocal_rank
-        )
+        return self.candidate.mean_reciprocal_rank - self.baseline.mean_reciprocal_rank
 
     @property
     def candidate_improved(self) -> bool:
         deltas = self._deltas()
-        return (
-            all(delta >= 0.0 for delta in deltas)
-            and any(delta > 0.0 for delta in deltas)
+        return all(delta >= 0.0 for delta in deltas) and any(
+            delta > 0.0 for delta in deltas
         )
 
     @property
     def candidate_regressed(self) -> bool:
-        return any(
-            delta < 0.0
-            for delta in self._deltas()
-        )
+        return any(delta < 0.0 for delta in self._deltas())
 
     def _deltas(self) -> tuple[float, float, float]:
         return (
@@ -158,9 +132,7 @@ class RetrievalEvaluator:
         k: int = 5,
     ) -> None:
         if k <= 0:
-            raise ValueError(
-                "Evaluation top-k must be greater than zero."
-            )
+            raise ValueError("Evaluation top-k must be greater than zero.")
 
         self.retriever = retriever
         self.k = k
@@ -172,36 +144,18 @@ class RetrievalEvaluator:
         case_list = tuple(cases)
 
         if not case_list:
-            raise ValueError(
-                "Evaluation dataset cannot be empty."
-            )
+            raise ValueError("Evaluation dataset cannot be empty.")
 
-        results = tuple(
-            self._evaluate_case(case)
-            for case in case_list
-        )
+        results = tuple(self._evaluate_case(case) for case in case_list)
         case_count = len(results)
 
         return RetrievalEvalReport(
             k=self.k,
             results=results,
-            hit_rate=(
-                fsum(result.hit for result in results)
-                / case_count
-            ),
-            mean_recall=(
-                fsum(
-                    result.recall
-                    for result in results
-                )
-                / case_count
-            ),
+            hit_rate=(fsum(result.hit for result in results) / case_count),
+            mean_recall=(fsum(result.recall for result in results) / case_count),
             mean_reciprocal_rank=(
-                fsum(
-                    result.reciprocal_rank
-                    for result in results
-                )
-                / case_count
+                fsum(result.reciprocal_rank for result in results) / case_count
             ),
         )
 
@@ -209,34 +163,31 @@ class RetrievalEvaluator:
         self,
         case: RetrievalEvalCase,
     ) -> RetrievalEvalResult:
-        retrieved_chunk_ids = tuple(
-            result.chunk.id
-            for result in self.retriever.retrieve(
-                case.query,
-                k=self.k,
-            )
-        )
-        relevant_ids = case.expected_chunk_ids.intersection(
-            retrieved_chunk_ids
+        retrieved = tuple(self.retriever.retrieve(case.query, k=self.k))
+        retrieved_chunk_ids = tuple(result.chunk.id for result in retrieved)
+        relevant_chunk_ids = case.expected_chunk_ids.intersection(retrieved_chunk_ids)
+        retrieved_document_ids = {result.chunk.document_id for result in retrieved}
+        relevant_document_ids = case.expected_document_ids.intersection(
+            retrieved_document_ids
         )
         reciprocal_rank = 0.0
 
-        for rank, chunk_id in enumerate(
-            retrieved_chunk_ids,
-            start=1,
-        ):
-            if chunk_id in case.expected_chunk_ids:
+        for rank, result in enumerate(retrieved, start=1):
+            if (
+                result.chunk.id in case.expected_chunk_ids
+                or result.chunk.document_id in case.expected_document_ids
+            ):
                 reciprocal_rank = 1.0 / rank
                 break
+
+        relevant_count = len(relevant_chunk_ids) + len(relevant_document_ids)
+        expected_count = len(case.expected_chunk_ids) + len(case.expected_document_ids)
 
         return RetrievalEvalResult(
             case=case,
             retrieved_chunk_ids=retrieved_chunk_ids,
-            hit=bool(relevant_ids),
-            recall=(
-                len(relevant_ids)
-                / len(case.expected_chunk_ids)
-            ),
+            hit=relevant_count > 0,
+            recall=relevant_count / expected_count,
             reciprocal_rank=reciprocal_rank,
         )
 
@@ -266,10 +217,6 @@ class RetrievalComparator:
         case_list = tuple(cases)
 
         return RetrievalComparisonReport(
-            baseline=self.baseline_evaluator.evaluate(
-                case_list
-            ),
-            candidate=self.candidate_evaluator.evaluate(
-                case_list
-            ),
+            baseline=self.baseline_evaluator.evaluate(case_list),
+            candidate=self.candidate_evaluator.evaluate(case_list),
         )

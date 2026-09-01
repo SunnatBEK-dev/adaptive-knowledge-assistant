@@ -1,6 +1,6 @@
+import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from itertools import count
-import json
 from threading import Thread
 
 import pytest
@@ -24,20 +24,15 @@ class LocalMCPHandler(BaseHTTPRequestHandler):
         method = payload["method"]
         params = payload["params"]
         assert self.path == "/mcp"
-        assert self.headers["Accept"] == (
-            "application/json, text/event-stream"
-        )
-        assert self.headers["MCP-Protocol-Version"] == (
-            params["_meta"][
-                "io.modelcontextprotocol/protocolVersion"
-            ]
+        assert self.headers["Accept"] == ("application/json, text/event-stream")
+        assert (
+            self.headers["MCP-Protocol-Version"]
+            == (params["_meta"]["io.modelcontextprotocol/protocolVersion"])
         )
         assert self.headers["Mcp-Method"] == method
         if method == "tools/call":
             assert self.headers["Mcp-Name"] == params["name"]
-            assert self.headers["Mcp-Param-Tenant"] == (
-                params["arguments"]["tenant"]
-            )
+            assert self.headers["Mcp-Param-Tenant"] == (params["arguments"]["tenant"])
         if method == "resources/read":
             assert self.headers["Mcp-Name"] == params["uri"]
 
@@ -98,10 +93,7 @@ class LocalMCPHandler(BaseHTTPRequestHandler):
                 "content": [
                     {
                         "type": "text",
-                        "text": (
-                            "Found guide for "
-                            + params["arguments"]["query"]
-                        ),
+                        "text": ("Found guide for " + params["arguments"]["query"]),
                     }
                 ],
                 "isError": False,
@@ -118,11 +110,7 @@ class LocalMCPHandler(BaseHTTPRequestHandler):
                                 "message": "Read the protected guide?",
                                 "requestedSchema": {
                                     "type": "object",
-                                    "properties": {
-                                        "approved": {
-                                            "type": "boolean"
-                                        }
-                                    },
+                                    "properties": {"approved": {"type": "boolean"}},
                                     "required": ["approved"],
                                 },
                             },
@@ -165,9 +153,7 @@ def test_local_streamable_http_approved_tool_and_resource_workflow():
     endpoint = f"http://127.0.0.1:{server.server_port}/mcp"
     transport = StreamableHTTPTransport(
         endpoint,
-        authorization_provider=lambda: (
-            f"Bearer local-{next(token_numbers)}"
-        ),
+        authorization_provider=lambda: f"Bearer local-{next(token_numbers)}",
     )
     client = MCPClient(
         transport,
@@ -193,9 +179,7 @@ def test_local_streamable_http_approved_tool_and_resource_workflow():
                     {"query": "Python", "tenant": "local"},
                 )
             )
-            continuation = client.read_resource(
-                "file:///guides/python.md"
-            )
+            continuation = client.read_resource("file:///guides/python.md")
             assert isinstance(continuation, MCPContinuation)
             resource = client.continue_request(
                 continuation,

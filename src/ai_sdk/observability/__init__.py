@@ -9,11 +9,10 @@ from ai_sdk.observability.model import (
 from ai_sdk.observability.tracing import (
     InMemoryTraceCollector,
     TraceCollector,
-    TraceSpan,
     Tracer,
+    TraceSpan,
     trace_span,
 )
-
 
 __all__ = [
     "InMemoryTraceCollector",

@@ -36,26 +36,28 @@ def make_chunk(
 
 
 def test_catalog_groups_chunks_and_preserves_source():
-    catalog = build_document_catalog([
-        make_chunk(
-            "chunk_b",
-            "doc_b",
-            0,
-            "/guides/b.md",
-        ),
-        make_chunk(
-            "chunk_a_one",
-            "doc_a",
-            0,
-            "/guides/a.txt",
-        ),
-        make_chunk(
-            "chunk_a_two",
-            "doc_a",
-            1,
-            "/guides/a.txt",
-        ),
-    ])
+    catalog = build_document_catalog(
+        [
+            make_chunk(
+                "chunk_b",
+                "doc_b",
+                0,
+                "/guides/b.md",
+            ),
+            make_chunk(
+                "chunk_a_one",
+                "doc_a",
+                0,
+                "/guides/a.txt",
+            ),
+            make_chunk(
+                "chunk_a_two",
+                "doc_a",
+                1,
+                "/guides/a.txt",
+            ),
+        ]
+    )
 
     assert catalog == [
         IndexedDocument(
@@ -72,28 +74,32 @@ def test_catalog_groups_chunks_and_preserves_source():
 
 
 def test_catalog_uses_document_id_when_source_is_missing():
-    catalog = build_document_catalog([
-        make_chunk(
-            "chunk_fallback",
-            "doc_fallback",
-            0,
-        )
-    ])
+    catalog = build_document_catalog(
+        [
+            make_chunk(
+                "chunk_fallback",
+                "doc_fallback",
+                0,
+            )
+        ]
+    )
 
     assert catalog[0].source == "doc_fallback"
 
 
 def test_catalog_preserves_sync_metadata():
-    catalog = build_document_catalog([
-        make_chunk(
-            "chunk_sync",
-            "doc_sync",
-            0,
-            "/guides/python.txt",
-            "content-digest",
-            "/guides",
-        )
-    ])
+    catalog = build_document_catalog(
+        [
+            make_chunk(
+                "chunk_sync",
+                "doc_sync",
+                0,
+                "/guides/python.txt",
+                "content-digest",
+                "/guides",
+            )
+        ]
+    )
 
     assert catalog == [
         IndexedDocument(

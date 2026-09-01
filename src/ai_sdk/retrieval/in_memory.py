@@ -30,23 +30,14 @@ class InMemoryVectorStore(BaseVectorStore):
         vector: EmbeddingVector,
     ) -> None:
         if not vector:
-            raise ValueError(
-                "Embedding vector cannot be empty."
-            )
+            raise ValueError("Embedding vector cannot be empty.")
 
-        stored_vector = [
-            float(value)
-            for value in vector
-        ]
+        stored_vector = [float(value) for value in vector]
         dimension = len(stored_vector)
 
-        if (
-            self._dimension is not None
-            and dimension != self._dimension
-        ):
+        if self._dimension is not None and dimension != self._dimension:
             raise ValueError(
-                "Embedding vector dimension does not match "
-                "the vector store."
+                "Embedding vector dimension does not match the vector store."
             )
 
         if self._dimension is None:
@@ -62,14 +53,8 @@ class InMemoryVectorStore(BaseVectorStore):
         query_vector: EmbeddingVector,
         k: int = 5,
     ) -> list[SearchResult]:
-        if (
-            self._dimension is not None
-            and len(query_vector) != self._dimension
-        ):
-            raise ValueError(
-                "Query vector dimension does not match "
-                "the vector store."
-            )
+        if self._dimension is not None and len(query_vector) != self._dimension:
+            raise ValueError("Query vector dimension does not match the vector store.")
 
         return top_k_search(
             query_vector=query_vector,
@@ -91,9 +76,7 @@ class InMemoryVectorStore(BaseVectorStore):
         previous_dimension = self._dimension
 
         try:
-            self._delete_document_in_memory(
-                document_id
-            )
+            self._delete_document_in_memory(document_id)
 
             for chunk, vector in item_list:
                 self.add(chunk, vector)
@@ -109,10 +92,7 @@ class InMemoryVectorStore(BaseVectorStore):
     ) -> list[SearchResult]:
         return bm25_search(
             query=query,
-            candidates=[
-                chunk
-                for chunk, _ in self._items.values()
-            ],
+            candidates=[chunk for chunk, _ in self._items.values()],
             k=k,
         )
 
@@ -132,17 +112,12 @@ class InMemoryVectorStore(BaseVectorStore):
         document_id: str,
     ) -> int:
         self._validate_document_id(document_id)
-        return self._delete_document_in_memory(
-            document_id
-        )
+        return self._delete_document_in_memory(document_id)
 
     def document_catalog(
         self,
     ) -> list[IndexedDocument]:
-        return build_document_catalog(
-            chunk
-            for chunk, _ in self._items.values()
-        )
+        return build_document_catalog(chunk for chunk, _ in self._items.values())
 
     def clear(self) -> None:
         self._items.clear()
@@ -174,17 +149,11 @@ class InMemoryVectorStore(BaseVectorStore):
         document_id: str,
         items: Sequence[EmbeddedChunk],
     ) -> None:
-        InMemoryVectorStore._validate_document_id(
-            document_id
-        )
+        InMemoryVectorStore._validate_document_id(document_id)
 
-        if any(
-            chunk.document_id != document_id
-            for chunk, _ in items
-        ):
+        if any(chunk.document_id != document_id for chunk, _ in items):
             raise ValueError(
-                "Replacement chunks must belong to the "
-                "requested document."
+                "Replacement chunks must belong to the requested document."
             )
 
     @staticmethod
@@ -192,6 +161,4 @@ class InMemoryVectorStore(BaseVectorStore):
         document_id: str,
     ) -> None:
         if not document_id.strip():
-            raise ValueError(
-                "Document ID cannot be empty."
-            )
+            raise ValueError("Document ID cannot be empty.")

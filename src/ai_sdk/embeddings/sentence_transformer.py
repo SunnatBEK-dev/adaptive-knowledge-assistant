@@ -1,11 +1,10 @@
 from collections.abc import Sequence
-from typing import Protocol
+from typing import Any, Protocol
 
 from ai_sdk.embeddings.base import (
     BaseEmbeddingClient,
     EmbeddingBatch,
 )
-
 
 DEFAULT_MODEL_NAME = "all-MiniLM-L6-v2"
 
@@ -16,13 +15,11 @@ class SentenceTransformerModel(Protocol):
         sentences: list[str],
         *,
         convert_to_numpy: bool,
-    ) -> object:
+    ) -> Any:
         """Return one vector for each sentence."""
 
 
-class SentenceTransformerEmbeddingClient(
-    BaseEmbeddingClient
-):
+class SentenceTransformerEmbeddingClient(BaseEmbeddingClient):
     """SentenceTransformer adapter behind the embedding contract."""
 
     def __init__(
@@ -50,10 +47,7 @@ class SentenceTransformerEmbeddingClient(
         if hasattr(encoded, "tolist"):
             encoded = encoded.tolist()
 
-        vectors = [
-            [float(value) for value in vector]
-            for vector in encoded
-        ]
+        vectors = [[float(value) for value in vector] for vector in encoded]
 
         if len(vectors) != len(input_texts):
             raise RuntimeError(
@@ -75,8 +69,6 @@ class SentenceTransformerEmbeddingClient(
                     "Install the 'embeddings' project extra."
                 ) from error
 
-            self._model = SentenceTransformer(
-                self.model_name
-            )
+            self._model = SentenceTransformer(self.model_name)
 
         return self._model

@@ -7,18 +7,16 @@ from typing import TYPE_CHECKING
 from ai_sdk.llm.types import LLMMessage
 from ai_sdk.tools.executor import ToolExecutor
 
-
 if TYPE_CHECKING:
     from ai_sdk.agents.model import (
         AgentEvent,
         AgentModelResponse,
     )
-    from ai_sdk.tools.schema import ToolSchema
     from ai_sdk.observability import Tracer
+    from ai_sdk.tools.schema import ToolSchema
 
 
 class BaseLLMClient(ABC):
-
     @abstractmethod
     def ask(
         self,

@@ -14,7 +14,6 @@ from ai_sdk.agents.progress import (
 from ai_sdk.agents.runner import AgentRunner
 from ai_sdk.agents.state import AgentState
 
-
 if TYPE_CHECKING:
     from ai_sdk.llm.retry import RetryPolicy
     from ai_sdk.observability import Tracer
@@ -40,18 +39,11 @@ class AgentWorker:
     def __post_init__(self) -> None:
         _validate_identifier(self.name, label="Worker name")
 
-        if (
-            not isinstance(self.description, str)
-            or not self.description.strip()
-        ):
-            raise CoordinationError(
-                "Worker description cannot be empty."
-            )
+        if not isinstance(self.description, str) or not self.description.strip():
+            raise CoordinationError("Worker description cannot be empty.")
 
         if not isinstance(self.runner, AgentRunner):
-            raise TypeError(
-                "Worker runner must be an AgentRunner."
-            )
+            raise TypeError("Worker runner must be an AgentRunner.")
 
         if self.provider is not None:
             _validate_identifier(
@@ -84,13 +76,8 @@ class AgentTask:
             label="Task worker name",
         )
 
-        if (
-            not isinstance(self.instruction, str)
-            or not self.instruction.strip()
-        ):
-            raise CoordinationError(
-                "Task instruction cannot be empty."
-            )
+        if not isinstance(self.instruction, str) or not self.instruction.strip():
+            raise CoordinationError("Task instruction cannot be empty.")
 
         object.__setattr__(
             self,
@@ -108,9 +95,7 @@ class AgentTaskResult:
 
     def __post_init__(self) -> None:
         if not isinstance(self.task, AgentTask):
-            raise TypeError(
-                "Task result task must be an AgentTask."
-            )
+            raise TypeError("Task result task must be an AgentTask.")
 
         if not isinstance(self.status, AgentTaskStatus):
             raise TypeError("Task result status is invalid.")
@@ -122,27 +107,19 @@ class AgentTaskResult:
             raise TypeError("Task result state is invalid.")
 
         if self.error is not None and (
-            not isinstance(self.error, str)
-            or not self.error.strip()
+            not isinstance(self.error, str) or not self.error.strip()
         ):
-            raise CoordinationError(
-                "Task result error must be a non-empty string."
-            )
+            raise CoordinationError("Task result error must be a non-empty string.")
 
         if self.status is AgentTaskStatus.COMPLETED:
             if (
                 self.state is None
-                or self.state.stop_reason
-                is not AgentStopReason.FINAL_RESPONSE
+                or self.state.stop_reason is not AgentStopReason.FINAL_RESPONSE
                 or self.error is not None
             ):
-                raise CoordinationError(
-                    "Completed task result is inconsistent."
-                )
+                raise CoordinationError("Completed task result is inconsistent.")
         elif self.error is None:
-            raise CoordinationError(
-                "Failed task result must contain an error."
-            )
+            raise CoordinationError("Failed task result must contain an error.")
 
     @property
     def output(self) -> str | None:
@@ -162,20 +139,13 @@ class CoordinationResult:
     ) -> None:
         normalized = tuple(results)
 
-        if any(
-            not isinstance(result, AgentTaskResult)
-            for result in normalized
-        ):
-            raise TypeError(
-                "Coordination results are invalid."
-            )
+        if any(not isinstance(result, AgentTaskResult) for result in normalized):
+            raise TypeError("Coordination results are invalid.")
 
         task_ids = [result.task.id for result in normalized]
 
         if len(task_ids) != len(set(task_ids)):
-            raise CoordinationError(
-                "Coordination result task IDs must be unique."
-            )
+            raise CoordinationError("Coordination result task IDs must be unique.")
 
         object.__setattr__(self, "results", normalized)
 
@@ -190,18 +160,12 @@ class CoordinationResult:
     @property
     def failed(self) -> tuple[AgentTaskResult, ...]:
         return tuple(
-            result
-            for result in self.results
-            if result.status is AgentTaskStatus.FAILED
+            result for result in self.results if result.status is AgentTaskStatus.FAILED
         )
 
     def for_task(self, task_id: str) -> AgentTaskResult | None:
         return next(
-            (
-                result
-                for result in self.results
-                if result.task.id == task_id
-            ),
+            (result for result in self.results if result.task.id == task_id),
             None,
         )
 
@@ -220,19 +184,12 @@ class MultiAgentCoordinator:
 
     def register(self, worker: AgentWorker) -> None:
         if not isinstance(worker, AgentWorker):
-            raise TypeError(
-                "Registered worker must be an AgentWorker."
-            )
+            raise TypeError("Registered worker must be an AgentWorker.")
 
         folded_name = worker.name.casefold()
 
-        if any(
-            name.casefold() == folded_name
-            for name in self._workers
-        ):
-            raise CoordinationError(
-                f"Worker is already registered: {worker.name}"
-            )
+        if any(name.casefold() == folded_name for name in self._workers):
+            raise CoordinationError(f"Worker is already registered: {worker.name}")
 
         self._workers[worker.name] = worker
 
@@ -255,42 +212,32 @@ class MultiAgentCoordinator:
             raise TypeError("Coordinator cancellation token is invalid.")
         normalized_tasks = tuple(tasks)
         self._validate_tasks(normalized_tasks)
-        results = [
-            self._run_task(task, cancellation)
-            for task in normalized_tasks
-        ]
+        results = [self._run_task(task, cancellation) for task in normalized_tasks]
         return CoordinationResult(results)
 
     def _validate_tasks(
         self,
         tasks: tuple[AgentTask, ...],
     ) -> None:
-        if any(
-            not isinstance(task, AgentTask)
-            for task in tasks
-        ):
-            raise TypeError(
-                "Coordinator tasks must be AgentTask objects."
-            )
+        if any(not isinstance(task, AgentTask) for task in tasks):
+            raise TypeError("Coordinator tasks must be AgentTask objects.")
 
         task_ids = [task.id for task in tasks]
 
         if len(task_ids) != len(set(task_ids)):
-            raise CoordinationError(
-                "Coordinator task IDs must be unique."
-            )
+            raise CoordinationError("Coordinator task IDs must be unique.")
 
-        unknown_workers = sorted({
-            task.worker_name
-            for task in tasks
-            if task.worker_name not in self._workers
-        })
+        unknown_workers = sorted(
+            {
+                task.worker_name
+                for task in tasks
+                if task.worker_name not in self._workers
+            }
+        )
 
         if unknown_workers:
             raise CoordinationError(
-                "Unknown task workers: "
-                + ", ".join(unknown_workers)
-                + "."
+                "Unknown task workers: " + ", ".join(unknown_workers) + "."
             )
 
     def _run_task(
@@ -307,10 +254,12 @@ class MultiAgentCoordinator:
 
         try:
             state = worker.runner.run(
-                [{
-                    "role": "user",
-                    "content": assignment,
-                }],
+                [
+                    {
+                        "role": "user",
+                        "content": assignment,
+                    }
+                ],
                 cancellation=cancellation,
             )
         except WorkflowCancelledError:
@@ -319,10 +268,7 @@ class MultiAgentCoordinator:
             return AgentTaskResult(
                 task=task,
                 status=AgentTaskStatus.FAILED,
-                error=(
-                    "Worker execution failed: "
-                    f"{type(error).__name__}"
-                ),
+                error=(f"Worker execution failed: {type(error).__name__}"),
             )
 
         if state.stop_reason is AgentStopReason.FINAL_RESPONSE:
@@ -332,11 +278,7 @@ class MultiAgentCoordinator:
                 state=state,
             )
 
-        reason = (
-            state.stop_reason.value
-            if state.stop_reason is not None
-            else "unknown"
-        )
+        reason = state.stop_reason.value if state.stop_reason is not None else "unknown"
         return AgentTaskResult(
             task=task,
             status=AgentTaskStatus.FAILED,
@@ -368,9 +310,7 @@ def create_provider_worker(
         executor,
         ToolExecutor,
     ):
-        raise TypeError(
-            "Worker executor must be a ToolExecutor."
-        )
+        raise TypeError("Worker executor must be a ToolExecutor.")
 
     active_executor = executor or ToolExecutor(ToolRegistry())
     runner = AgentRunner(
@@ -397,6 +337,4 @@ def _validate_identifier(name: str, *, label: str) -> None:
         )
         is None
     ):
-        raise CoordinationError(
-            f"{label} must be a valid identifier."
-        )
+        raise CoordinationError(f"{label} must be a valid identifier.")

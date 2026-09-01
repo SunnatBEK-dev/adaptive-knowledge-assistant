@@ -7,8 +7,8 @@ from ai_sdk.agents import (
     AgentRunner,
     AgentStopReason,
     AgentTextBlock,
-    LLMAgentReflector,
     LLMAgentPlanner,
+    LLMAgentReflector,
     PlanStatus,
     ReflectionVerdict,
 )
@@ -25,18 +25,19 @@ from ai_sdk.tools import (
     ToolSchema,
 )
 
-
 pytestmark = pytest.mark.integration
 
 
 class PlanningClient(BaseLLMClient):
     def ask(self, messages):
-        return json.dumps({
-            "steps": [
-                "Double 2",
-                "Double 3",
-            ],
-        })
+        return json.dumps(
+            {
+                "steps": [
+                    "Double 2",
+                    "Double 3",
+                ],
+            }
+        )
 
     def stream(self, messages):
         yield self.ask(messages)
@@ -44,12 +45,14 @@ class PlanningClient(BaseLLMClient):
 
 class ReviewClient(BaseLLMClient):
     def ask(self, messages):
-        return json.dumps({
-            "verdict": "passed",
-            "summary": "Both plan steps completed.",
-            "strengths": ["All outcomes are present"],
-            "improvements": [],
-        })
+        return json.dumps(
+            {
+                "verdict": "passed",
+                "summary": "Both plan steps completed.",
+                "strengths": ["All outcomes are present"],
+                "improvements": [],
+            }
+        )
 
     def stream(self, messages):
         yield self.ask(messages)
@@ -58,13 +61,17 @@ class ReviewClient(BaseLLMClient):
 class StepClient(BaseToolLLMClient):
     def __init__(self):
         self.responses = [
-            AgentModelResponse([
-                ToolCall("call_1", "double", {"value": 2}),
-            ]),
+            AgentModelResponse(
+                [
+                    ToolCall("call_1", "double", {"value": 2}),
+                ]
+            ),
             AgentModelResponse([AgentTextBlock("4")]),
-            AgentModelResponse([
-                ToolCall("call_2", "double", {"value": 3}),
-            ]),
+            AgentModelResponse(
+                [
+                    ToolCall("call_2", "double", {"value": 3}),
+                ]
+            ),
             AgentModelResponse([AgentTextBlock("6")]),
         ]
 
@@ -79,9 +86,7 @@ class StepClient(BaseToolLLMClient):
 
 
 def test_plan_steps_can_be_executed_by_agent_runner():
-    plan = LLMAgentPlanner(PlanningClient()).create_plan(
-        "Double two numbers"
-    )
+    plan = LLMAgentPlanner(PlanningClient()).create_plan("Double two numbers")
     registry = ToolRegistry()
     executions = []
     registry.register(
@@ -105,19 +110,21 @@ def test_plan_steps_can_be_executed_by_agent_runner():
 
     while plan.status is not PlanStatus.COMPLETED:
         step = plan.start_next()
-        state = runner.run([{
-            "role": "user",
-            "content": step.description,
-        }])
+        state = runner.run(
+            [
+                {
+                    "role": "user",
+                    "content": step.description,
+                }
+            ]
+        )
         assert state.stop_reason is AgentStopReason.FINAL_RESPONSE
         plan.complete_current(state.final_text)
 
     assert executions == [2, 3]
     assert [step.outcome for step in plan.steps] == ["4", "6"]
 
-    reflection = LLMAgentReflector(
-        ReviewClient()
-    ).reflect_plan(plan)
+    reflection = LLMAgentReflector(ReviewClient()).reflect_plan(plan)
 
     assert reflection.verdict is ReflectionVerdict.PASSED
     assert reflection.summary == "Both plan steps completed."

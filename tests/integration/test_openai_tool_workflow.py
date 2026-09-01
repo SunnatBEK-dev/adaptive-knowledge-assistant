@@ -5,7 +5,7 @@ import pytest
 from ai_sdk.application.conversation_manager import ConversationManager
 from ai_sdk.context.prompt_builder import PromptBuilder
 from ai_sdk.llm.openai import OpenAIClient
-from ai_sdk.storage.json import JsonConversationRepository
+from ai_sdk.storage.json import JSONConversationRepository
 from ai_sdk.tools import (
     ToolExecutor,
     ToolParameter,
@@ -13,7 +13,6 @@ from ai_sdk.tools import (
     ToolRegistry,
     ToolSchema,
 )
-
 
 pytestmark = pytest.mark.integration
 
@@ -46,19 +45,21 @@ def message(text):
 
 
 def test_openai_tool_result_reaches_final_persisted_answer(tmp_path):
-    provider = ScriptedOpenAI([
-        SimpleNamespace(output=[
+    provider = ScriptedOpenAI(
+        [
             SimpleNamespace(
-                type="function_call",
-                call_id="call_weather_1",
-                name="get_weather",
-                arguments='{"city": "Samarqand"}',
-            )
-        ]),
-        SimpleNamespace(output=[
-            message("Samarqandda havo 24°C.")
-        ]),
-    ])
+                output=[
+                    SimpleNamespace(
+                        type="function_call",
+                        call_id="call_weather_1",
+                        name="get_weather",
+                        arguments='{"city": "Samarqand"}',
+                    )
+                ]
+            ),
+            SimpleNamespace(output=[message("Samarqandda havo 24°C.")]),
+        ]
+    )
     registry = ToolRegistry()
     registry.register(
         ToolSchema(
@@ -74,7 +75,7 @@ def test_openai_tool_result_reaches_final_persisted_answer(tmp_path):
         ),
         lambda city: {"city": city, "temperature_c": 24},
     )
-    repository = JsonConversationRepository(tmp_path / "chat.json")
+    repository = JSONConversationRepository(tmp_path / "chat.json")
     conversation = repository.load()
     manager = ConversationManager(
         conversation=conversation,
@@ -87,9 +88,7 @@ def test_openai_tool_result_reaches_final_persisted_answer(tmp_path):
         tool_executor=ToolExecutor(registry),
     )
 
-    answer = manager.send_message(
-        "Samarqanddagi ob-havoni tekshir."
-    )
+    answer = manager.send_message("Samarqanddagi ob-havoni tekshir.")
     restored = repository.load()
 
     assert answer == "Samarqandda havo 24°C."
@@ -102,8 +101,5 @@ def test_openai_tool_result_reaches_final_persisted_answer(tmp_path):
     assert tool_result == {
         "type": "function_call_output",
         "call_id": "call_weather_1",
-        "output": (
-            '{"city": "Samarqand", '
-            '"temperature_c": 24}'
-        ),
+        "output": ('{"city": "Samarqand", "temperature_c": 24}'),
     }

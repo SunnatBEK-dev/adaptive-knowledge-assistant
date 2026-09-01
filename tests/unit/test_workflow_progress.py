@@ -12,18 +12,18 @@ from ai_sdk.agents import (
     DependencyHandoffCoordinator,
     HandoffStage,
     MultiAgentCoordinator,
+    MultiModelRoute,
     SequentialHandoffCoordinator,
-    SuperAIRoute,
     WorkflowCancelledError,
     WorkflowProgressEvent,
     WorkflowProgressReporter,
     WorkflowProgressStatus,
 )
-from ai_sdk.llm.base import BaseToolLLMClient
-from ai_sdk.llm.super_ai import (
-    RoutedSuperAIClient,
-    SuperAIClient,
+from ai_sdk.llm.adaptive_multi_model import (
+    AdaptiveMultiModelClient,
+    MultiModelWorkflowClient,
 )
+from ai_sdk.llm.base import BaseToolLLMClient
 from ai_sdk.tools import ToolExecutor, ToolRegistry
 
 
@@ -69,45 +69,42 @@ def worker(name, client):
 
 def sequential_workflow(client, stage_ids=("final",)):
     agent = worker("worker", client)
-    return SuperAIClient(SequentialHandoffCoordinator(
-        MultiAgentCoordinator([agent]),
-        [
-            HandoffStage(stage_id, "worker", "Run stage")
-            for stage_id in stage_ids
-        ],
-    ))
+    return MultiModelWorkflowClient(
+        SequentialHandoffCoordinator(
+            MultiAgentCoordinator([agent]),
+            [HandoffStage(stage_id, "worker", "Run stage") for stage_id in stage_ids],
+        )
+    )
 
 
-def routed_with(reasoning_workflow, *, progress_handler=None):
-    return RoutedSuperAIClient(
+def adaptive_client_with(reasoning_workflow, *, progress_handler=None):
+    return AdaptiveMultiModelClient(
         CapabilityRouter(),
         {
-            SuperAIRoute.FAST: sequential_workflow(
-                ProgressClient("fast")
-            ),
-            SuperAIRoute.CONTEXT: sequential_workflow(
-                ProgressClient("context")
-            ),
-            SuperAIRoute.REASONING: reasoning_workflow,
-            SuperAIRoute.FULL: sequential_workflow(
-                ProgressClient("full")
-            ),
+            MultiModelRoute.FAST: sequential_workflow(ProgressClient("fast")),
+            MultiModelRoute.CONTEXT: sequential_workflow(ProgressClient("context")),
+            MultiModelRoute.REASONING: reasoning_workflow,
+            MultiModelRoute.FULL: sequential_workflow(ProgressClient("full")),
         },
         progress_handler=progress_handler,
     )
 
 
-def test_routed_run_emits_ordered_content_free_progress():
+def test_adaptive_run_emits_ordered_content_free_progress():
     events = []
-    client = routed_with(
+    client = adaptive_client_with(
         sequential_workflow(ProgressClient("answer")),
         progress_handler=events.append,
     )
 
-    response = client.ask([{
-        "role": "user",
-        "content": "private question",
-    }])
+    response = client.ask(
+        [
+            {
+                "role": "user",
+                "content": "private question",
+            }
+        ]
+    )
 
     assert response == "fast"
     assert [event.status for event in events] == [
@@ -119,9 +116,7 @@ def test_routed_run_emits_ordered_content_free_progress():
     assert [event.sequence for event in events] == [1, 2, 3, 4]
     assert events[-1] is client.last_progress_event
     assert client.cancel() is False
-    assert "private question" not in str(
-        [event.to_dict() for event in events]
-    )
+    assert "private question" not in str([event.to_dict() for event in events])
 
 
 def test_active_run_can_be_cancelled_before_the_next_stage():
@@ -134,7 +129,7 @@ def test_active_run_can_be_cancelled_before_the_next_stage():
     )
     events = []
     provider_worker = worker("worker", provider)
-    cancellable_workflow = SuperAIClient(
+    cancellable_workflow = MultiModelWorkflowClient(
         DependencyHandoffCoordinator(
             MultiAgentCoordinator([provider_worker]),
             [
@@ -148,7 +143,7 @@ def test_active_run_can_be_cancelled_before_the_next_stage():
             ],
         )
     )
-    client = routed_with(
+    client = adaptive_client_with(
         cancellable_workflow,
         progress_handler=events.append,
     )
@@ -156,10 +151,14 @@ def test_active_run_can_be_cancelled_before_the_next_stage():
 
     def run():
         try:
-            client.ask([{
-                "role": "user",
-                "content": "Nega bu ishlaydi?",
-            }])
+            client.ask(
+                [
+                    {
+                        "role": "user",
+                        "content": "Nega bu ishlaydi?",
+                    }
+                ]
+            )
         except Exception as error:
             outcome["error"] = error
 
@@ -184,10 +183,8 @@ def test_active_run_can_be_cancelled_before_the_next_stage():
         WorkflowProgressStatus.STAGE_STARTED,
         WorkflowProgressStatus.WORKFLOW_CANCELLED,
     ]
-    assert events[-1].status is (
-        WorkflowProgressStatus.WORKFLOW_CANCELLED
-    )
-    metric = client.stats.records()[0]
+    assert events[-1].status is (WorkflowProgressStatus.WORKFLOW_CANCELLED)
+    metric = client.metrics.records()[0]
     assert metric.completed is False
     assert metric.executed_stage_ids == ()
     assert metric.error_type == "WorkflowCancelledError"
@@ -245,15 +242,22 @@ def test_progress_observer_failure_never_changes_result():
     def broken_handler(event):
         raise RuntimeError("observer unavailable")
 
-    client = routed_with(
+    client = adaptive_client_with(
         sequential_workflow(ProgressClient()),
         progress_handler=broken_handler,
     )
 
-    assert client.ask([{
-        "role": "user",
-        "content": "Salom",
-    }]) == "fast"
+    assert (
+        client.ask(
+            [
+                {
+                    "role": "user",
+                    "content": "Salom",
+                }
+            ]
+        )
+        == "fast"
+    )
     assert client.last_progress_event.status is (
         WorkflowProgressStatus.WORKFLOW_COMPLETED
     )
@@ -316,15 +320,13 @@ def test_handoff_rejects_invalid_progress_control():
         MultiAgentCoordinator().run([], cancellation=object())
 
 
-def test_routed_client_rejects_invalid_progress_handler():
-    template = routed_with(
-        sequential_workflow(ProgressClient())
-    )
+def test_adaptive_client_rejects_invalid_progress_handler():
+    template = adaptive_client_with(sequential_workflow(ProgressClient()))
 
     with pytest.raises(TypeError, match="progress handler"):
-        RoutedSuperAIClient(
+        AdaptiveMultiModelClient(
             CapabilityRouter(),
             template.workflows,
             progress_handler=object(),
         )
-    assert RoutedSuperAIClient._completed_stage_count(None) == 0
+    assert AdaptiveMultiModelClient._completed_stage_count(None) == 0

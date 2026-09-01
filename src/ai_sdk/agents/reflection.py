@@ -34,14 +34,10 @@ class AgentReflection:
         improvements: Sequence[str] = (),
     ) -> None:
         if not isinstance(verdict, ReflectionVerdict):
-            raise ReflectionValidationError(
-                "Reflection verdict is invalid."
-            )
+            raise ReflectionValidationError("Reflection verdict is invalid.")
 
         if not isinstance(summary, str) or not summary.strip():
-            raise ReflectionValidationError(
-                "Reflection summary cannot be empty."
-            )
+            raise ReflectionValidationError("Reflection summary cannot be empty.")
 
         normalized_strengths = self._normalize_items(
             strengths,
@@ -71,25 +67,14 @@ class AgentReflection:
         *,
         label: str,
     ) -> tuple[str, ...]:
-        if (
-            isinstance(items, str)
-            or not isinstance(items, Sequence)
-        ):
-            raise ReflectionValidationError(
-                f"Reflection {label} must be a list."
-            )
+        if isinstance(items, str) or not isinstance(items, Sequence):
+            raise ReflectionValidationError(f"Reflection {label} must be a list.")
 
         normalized = tuple(
-            item.strip()
-            if isinstance(item, str)
-            else item
-            for item in items
+            item.strip() if isinstance(item, str) else item for item in items
         )
 
-        if any(
-            not isinstance(item, str) or not item
-            for item in normalized
-        ):
+        if any(not isinstance(item, str) or not item for item in normalized):
             raise ReflectionValidationError(
                 f"Reflection {label} must be non-empty strings."
             )
@@ -97,15 +82,12 @@ class AgentReflection:
         folded = [item.casefold() for item in normalized]
 
         if len(folded) != len(set(folded)):
-            raise ReflectionValidationError(
-                f"Reflection {label} must be unique."
-            )
+            raise ReflectionValidationError(f"Reflection {label} must be unique.")
 
         return normalized
 
 
 class BaseAgentReflector(ABC):
-
     @abstractmethod
     def reflect_state(
         self,
@@ -132,9 +114,7 @@ class LLMAgentReflector(BaseAgentReflector):
         max_input_chars: int = 12_000,
     ) -> None:
         if not isinstance(client, BaseLLMClient):
-            raise TypeError(
-                "Reflector client must be a BaseLLMClient."
-            )
+            raise TypeError("Reflector client must be a BaseLLMClient.")
 
         self._validate_limit(max_items, label="feedback items")
         self._validate_limit(
@@ -150,9 +130,7 @@ class LLMAgentReflector(BaseAgentReflector):
         state: AgentState,
     ) -> AgentReflection:
         if not isinstance(state, AgentState):
-            raise TypeError(
-                "Reflection state must be an AgentState."
-            )
+            raise TypeError("Reflection state must be an AgentState.")
 
         if (
             not state.is_finished
@@ -163,7 +141,7 @@ class LLMAgentReflector(BaseAgentReflector):
                 "Only a finished agent state can be reflected."
             )
 
-        snapshot = {
+        snapshot: dict[str, object] = {
             "stop_reason": state.stop_reason.value,
             "final_text": state.final_text,
             "messages": [dict(message) for message in state.messages],
@@ -199,9 +177,7 @@ class LLMAgentReflector(BaseAgentReflector):
         plan: AgentPlan,
     ) -> AgentReflection:
         if not isinstance(plan, AgentPlan):
-            raise TypeError(
-                "Reflection plan must be an AgentPlan."
-            )
+            raise TypeError("Reflection plan must be an AgentPlan.")
 
         if plan.status not in {
             PlanStatus.COMPLETED,
@@ -236,16 +212,20 @@ class LLMAgentReflector(BaseAgentReflector):
             ensure_ascii=False,
             sort_keys=True,
         )
-        excerpt = encoded_snapshot[:self.max_input_chars]
+        excerpt = encoded_snapshot[: self.max_input_chars]
         was_truncated = len(encoded_snapshot) > len(excerpt)
-        response = self.client.ask([{
-            "role": "user",
-            "content": self._build_prompt(
-                subject,
-                excerpt,
-                was_truncated=was_truncated,
-            ),
-        }])
+        response = self.client.ask(
+            [
+                {
+                    "role": "user",
+                    "content": self._build_prompt(
+                        subject,
+                        excerpt,
+                        was_truncated=was_truncated,
+                    ),
+                }
+            ]
+        )
         return self._parse_response(response)
 
     def _parse_response(
@@ -253,9 +233,7 @@ class LLMAgentReflector(BaseAgentReflector):
         response: str,
     ) -> AgentReflection:
         if not isinstance(response, str):
-            raise ReflectionValidationError(
-                "Reflector response must be a string."
-            )
+            raise ReflectionValidationError("Reflector response must be a string.")
 
         try:
             payload = json.loads(response)
@@ -271,20 +249,13 @@ class LLMAgentReflector(BaseAgentReflector):
             "improvements",
         }
 
-        if (
-            not isinstance(payload, dict)
-            or set(payload) != required_keys
-        ):
-            raise ReflectionValidationError(
-                "Reflector response has an invalid shape."
-            )
+        if not isinstance(payload, dict) or set(payload) != required_keys:
+            raise ReflectionValidationError("Reflector response has an invalid shape.")
 
         try:
             verdict = ReflectionVerdict(payload["verdict"])
         except (TypeError, ValueError) as error:
-            raise ReflectionValidationError(
-                "Reflector verdict is invalid."
-            ) from error
+            raise ReflectionValidationError("Reflector verdict is invalid.") from error
 
         strengths = self._parse_items(
             payload["strengths"],
@@ -308,14 +279,10 @@ class LLMAgentReflector(BaseAgentReflector):
         label: str,
     ) -> list[str]:
         if not isinstance(items, list):
-            raise ReflectionValidationError(
-                f"Reflector {label} must be a list."
-            )
+            raise ReflectionValidationError(f"Reflector {label} must be a list.")
 
         if len(items) > self.max_items:
-            raise ReflectionValidationError(
-                f"Reflector returned too many {label}."
-            )
+            raise ReflectionValidationError(f"Reflector returned too many {label}.")
 
         return items
 
@@ -327,9 +294,7 @@ class LLMAgentReflector(BaseAgentReflector):
         was_truncated: bool,
     ) -> str:
         truncation_note = (
-            " The snapshot is a truncated excerpt."
-            if was_truncated
-            else ""
+            " The snapshot is a truncated excerpt." if was_truncated else ""
         )
         return (
             f"Review this completed {subject}. Return JSON only with "
@@ -344,11 +309,5 @@ class LLMAgentReflector(BaseAgentReflector):
 
     @staticmethod
     def _validate_limit(value: int, *, label: str) -> None:
-        if (
-            not isinstance(value, int)
-            or isinstance(value, bool)
-            or value <= 0
-        ):
-            raise ValueError(
-                f"Maximum {label} must be greater than zero."
-            )
+        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+            raise ValueError(f"Maximum {label} must be greater than zero.")

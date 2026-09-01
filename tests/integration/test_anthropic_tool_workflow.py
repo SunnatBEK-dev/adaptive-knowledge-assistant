@@ -4,8 +4,8 @@ import pytest
 
 from ai_sdk.application.conversation_manager import ConversationManager
 from ai_sdk.context.prompt_builder import PromptBuilder
-from ai_sdk.llm.claude import ClaudeClient
-from ai_sdk.storage.json import JsonConversationRepository
+from ai_sdk.llm.anthropic import AnthropicClient
+from ai_sdk.storage.json import JSONConversationRepository
 from ai_sdk.tools import (
     ToolExecutor,
     ToolParameter,
@@ -13,7 +13,6 @@ from ai_sdk.tools import (
     ToolRegistry,
     ToolSchema,
 )
-
 
 pytestmark = pytest.mark.integration
 
@@ -33,29 +32,31 @@ class ScriptedAnthropicClient:
         self.messages = ScriptedMessagesAPI(responses)
 
 
-def test_claude_tool_result_reaches_final_persisted_answer(tmp_path):
-    provider = ScriptedAnthropicClient([
-        SimpleNamespace(
-            content=[
-                SimpleNamespace(
-                    type="tool_use",
-                    id="tool_weather_1",
-                    name="get_weather",
-                    input={"city": "Samarqand"},
-                ),
-            ],
-            stop_reason="tool_use",
-        ),
-        SimpleNamespace(
-            content=[
-                SimpleNamespace(
-                    type="text",
-                    text="Samarqandda havo 24°C.",
-                ),
-            ],
-            stop_reason="end_turn",
-        ),
-    ])
+def test_anthropic_tool_result_reaches_final_persisted_answer(tmp_path):
+    provider = ScriptedAnthropicClient(
+        [
+            SimpleNamespace(
+                content=[
+                    SimpleNamespace(
+                        type="tool_use",
+                        id="tool_weather_1",
+                        name="get_weather",
+                        input={"city": "Samarqand"},
+                    ),
+                ],
+                stop_reason="tool_use",
+            ),
+            SimpleNamespace(
+                content=[
+                    SimpleNamespace(
+                        type="text",
+                        text="Samarqandda havo 24°C.",
+                    ),
+                ],
+                stop_reason="end_turn",
+            ),
+        ]
+    )
     registry = ToolRegistry()
     registry.register(
         ToolSchema(
@@ -71,12 +72,12 @@ def test_claude_tool_result_reaches_final_persisted_answer(tmp_path):
         ),
         lambda city: {"city": city, "temperature_c": 24},
     )
-    repository = JsonConversationRepository(tmp_path / "chat.json")
+    repository = JSONConversationRepository(tmp_path / "chat.json")
     conversation = repository.load()
     manager = ConversationManager(
         conversation=conversation,
         prompt_builder=PromptBuilder(conversation),
-        client=ClaudeClient(
+        client=AnthropicClient(
             client=provider,
             model="claude-test",
         ),
@@ -84,9 +85,7 @@ def test_claude_tool_result_reaches_final_persisted_answer(tmp_path):
         tool_executor=ToolExecutor(registry),
     )
 
-    answer = manager.send_message(
-        "Samarqanddagi ob-havoni tekshir."
-    )
+    answer = manager.send_message("Samarqanddagi ob-havoni tekshir.")
     restored = repository.load()
 
     assert answer == "Samarqandda havo 24°C."
@@ -102,10 +101,7 @@ def test_claude_tool_result_reaches_final_persisted_answer(tmp_path):
             {
                 "type": "tool_result",
                 "tool_use_id": "tool_weather_1",
-                "content": (
-                    '{"city": "Samarqand", '
-                    '"temperature_c": 24}'
-                ),
+                "content": ('{"city": "Samarqand", "temperature_c": 24}'),
                 "is_error": False,
             },
         ],

@@ -9,8 +9,8 @@ from ai_sdk.memory.model import (
 )
 from ai_sdk.observability import (
     InMemoryTraceCollector,
-    TraceStatus,
     Tracer,
+    TraceStatus,
 )
 from ai_sdk.tools import ToolExecutor, ToolRegistry
 
@@ -74,10 +74,7 @@ class FakeRepository:
     def save(self, conversation):
         if self.error:
             raise self.error
-        self.saved.append([
-            message.to_dict()
-            for message in conversation.history()
-        ])
+        self.saved.append([message.to_dict() for message in conversation.history()])
 
     def load(self):
         return Conversation()
@@ -97,11 +94,7 @@ class FakeMemoryStore:
 
     def delete(self, memory_id):
         before = len(self.memories)
-        self.memories = [
-            memory
-            for memory in self.memories
-            if memory.id != memory_id
-        ]
+        self.memories = [memory for memory in self.memories if memory.id != memory_id]
         return len(self.memories) < before
 
     def search(self, query, k=3):
@@ -115,7 +108,7 @@ class FakeMemoryStore:
         return len(self.memories)
 
 
-def build_manager(
+def create_rag_manager(
     client=None,
     repository=None,
     memory_store=None,
@@ -140,7 +133,7 @@ def build_manager(
 
 
 def test_send_message_orchestrates_and_persists_conversation():
-    manager, conversation, client, repository = build_manager()
+    manager, conversation, client, repository = create_rag_manager()
 
     response = manager.send_message("User question")
 
@@ -156,7 +149,7 @@ def test_send_message_orchestrates_and_persists_conversation():
 
 
 def test_send_message_rolls_back_new_state_when_client_fails():
-    manager, conversation, _, repository = build_manager(
+    manager, conversation, _, repository = create_rag_manager(
         client=FakeClient(error=RuntimeError("LLM failed")),
     )
     existing = conversation.add_user("Existing")
@@ -169,7 +162,7 @@ def test_send_message_rolls_back_new_state_when_client_fails():
 
 
 def test_send_message_rolls_back_new_state_when_save_fails():
-    manager, conversation, _, _ = build_manager(
+    manager, conversation, _, _ = create_rag_manager(
         repository=FakeRepository(error=OSError("save failed")),
     )
     existing = conversation.add_user("Existing")
@@ -181,7 +174,7 @@ def test_send_message_rolls_back_new_state_when_save_fails():
 
 
 def test_stream_message_yields_chunks_and_persists_full_response():
-    manager, conversation, client, repository = build_manager(
+    manager, conversation, client, repository = create_rag_manager(
         client=FakeClient(chunks=["A", "B", "C"]),
     )
 
@@ -197,7 +190,7 @@ def test_stream_message_yields_chunks_and_persists_full_response():
 
 def test_stream_message_traces_lengths_without_content():
     collector = InMemoryTraceCollector()
-    manager, _, _, _ = build_manager(
+    manager, _, _, _ = create_rag_manager(
         tracer=Tracer(collector),
     )
 
@@ -211,13 +204,11 @@ def test_stream_message_traces_lengths_without_content():
     assert root.attributes["conversation.response_length"] == 18
     assert llm.attributes["llm.response_char_count"] == 18
     assert root.status is llm.status is TraceStatus.OK
-    assert "private question" not in str(
-        [record.to_dict() for record in (root, llm)]
-    )
+    assert "private question" not in str([record.to_dict() for record in (root, llm)])
 
 
 def test_stream_message_rolls_back_when_stream_fails():
-    manager, conversation, _, repository = build_manager(
+    manager, conversation, _, repository = create_rag_manager(
         client=FakeClient(
             chunks=["partial"],
             error=RuntimeError("stream failed"),
@@ -232,7 +223,7 @@ def test_stream_message_rolls_back_when_stream_fails():
 
 
 def test_stream_message_rolls_back_when_consumer_closes_early():
-    manager, conversation, _, repository = build_manager(
+    manager, conversation, _, repository = create_rag_manager(
         client=FakeClient(chunks=["first", "second"]),
     )
     stream = manager.stream_message("Question")
@@ -245,7 +236,7 @@ def test_stream_message_rolls_back_when_consumer_closes_early():
 
 
 def test_stream_message_rolls_back_when_save_fails():
-    manager, conversation, _, _ = build_manager(
+    manager, conversation, _, _ = create_rag_manager(
         repository=FakeRepository(error=OSError("save failed")),
     )
 
@@ -264,30 +255,20 @@ def test_manager_recalls_relevant_long_term_memory():
         memories=[memory],
         results=[MemorySearchResult(memory, 1.0)],
     )
-    manager, _, client, _ = build_manager(
-        memory_store=memory_store
-    )
+    manager, _, client, _ = create_rag_manager(memory_store=memory_store)
 
     manager.send_message("Which language is preferred?")
 
-    assert memory_store.searches == [
-        ("Which language is preferred?", 3)
-    ]
-    assert "Preferred language is Uzbek" in (
-        client.received_messages[-1]["content"]
-    )
+    assert memory_store.searches == [("Which language is preferred?", 3)]
+    assert "Preferred language is Uzbek" in (client.received_messages[-1]["content"])
 
 
 def test_manager_manages_memories_without_duplicates():
     memory_store = FakeMemoryStore()
-    manager, _, _, _ = build_manager(
-        memory_store=memory_store
-    )
+    manager, _, _, _ = create_rag_manager(memory_store=memory_store)
 
     first = manager.remember(" Preferred language is Uzbek ")
-    duplicate = manager.remember(
-        "preferred language is uzbek"
-    )
+    duplicate = manager.remember("preferred language is uzbek")
 
     assert duplicate is first
     assert manager.list_memories() == [first]
@@ -296,14 +277,12 @@ def test_manager_manages_memories_without_duplicates():
 
 
 def test_manager_rejects_unconfigured_or_invalid_memory():
-    manager, _, _, _ = build_manager()
+    manager, _, _, _ = create_rag_manager()
 
     with pytest.raises(RuntimeError, match="not configured"):
         manager.list_memories()
 
-    configured, _, _, _ = build_manager(
-        memory_store=FakeMemoryStore()
-    )
+    configured, _, _, _ = create_rag_manager(memory_store=FakeMemoryStore())
 
     with pytest.raises(ValueError, match="content"):
         configured.remember(" ")
@@ -321,7 +300,7 @@ def test_manager_rejects_unconfigured_or_invalid_memory():
 def test_manager_uses_tool_capable_client_and_persists_final_text():
     executor = ToolExecutor(ToolRegistry())
     client = FakeToolClient()
-    manager, conversation, _, repository = build_manager(
+    manager, conversation, _, repository = create_rag_manager(
         client=client,
         tool_executor=executor,
         max_tool_rounds=4,
@@ -343,10 +322,8 @@ def test_manager_uses_tool_capable_client_and_persists_final_text():
 
 
 def test_manager_rolls_back_when_tool_client_fails():
-    manager, conversation, _, repository = build_manager(
-        client=FakeToolClient(
-            error=RuntimeError("tool loop failed")
-        ),
+    manager, conversation, _, repository = create_rag_manager(
+        client=FakeToolClient(error=RuntimeError("tool loop failed")),
         tool_executor=ToolExecutor(ToolRegistry()),
     )
 
@@ -358,7 +335,7 @@ def test_manager_rolls_back_when_tool_client_fails():
 
 
 def test_manager_rejects_tools_for_non_tool_client():
-    manager, conversation, _, repository = build_manager(
+    manager, conversation, _, repository = create_rag_manager(
         client=FakeClient(),
         tool_executor=ToolExecutor(ToolRegistry()),
     )
@@ -371,7 +348,7 @@ def test_manager_rejects_tools_for_non_tool_client():
 
 
 def test_manager_rejects_streaming_when_tools_are_configured():
-    manager, conversation, _, repository = build_manager(
+    manager, conversation, _, repository = create_rag_manager(
         client=FakeToolClient(),
         tool_executor=ToolExecutor(ToolRegistry()),
     )
@@ -386,14 +363,14 @@ def test_manager_rejects_streaming_when_tools_are_configured():
 @pytest.mark.parametrize("max_tool_rounds", [0, -1, True, 1.5])
 def test_manager_rejects_invalid_tool_round_limit(max_tool_rounds):
     with pytest.raises(ValueError, match="greater than zero"):
-        build_manager(max_tool_rounds=max_tool_rounds)
+        create_rag_manager(max_tool_rounds=max_tool_rounds)
 
 
 def test_manager_rejects_invalid_tool_executor():
     with pytest.raises(TypeError, match="ToolExecutor"):
-        build_manager(tool_executor=object())
+        create_rag_manager(tool_executor=object())
 
 
 def test_manager_rejects_invalid_tracer():
     with pytest.raises(TypeError, match="tracer"):
-        build_manager(tracer=object())
+        create_rag_manager(tracer=object())

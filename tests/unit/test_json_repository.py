@@ -1,13 +1,11 @@
 import json
 
 from ai_sdk.core.conversation import Conversation
-from ai_sdk.storage.json import JsonConversationRepository
+from ai_sdk.storage.json import JSONConversationRepository
 
 
 def test_load_missing_file_returns_empty_conversation(tmp_path):
-    repository = JsonConversationRepository(
-        tmp_path / "missing" / "chat.json"
-    )
+    repository = JSONConversationRepository(tmp_path / "missing" / "chat.json")
 
     conversation = repository.load()
 
@@ -16,7 +14,7 @@ def test_load_missing_file_returns_empty_conversation(tmp_path):
 
 def test_save_and_load_round_trip_preserves_message_identity(tmp_path):
     file_path = tmp_path / "nested" / "chat.json"
-    repository = JsonConversationRepository(file_path)
+    repository = JSONConversationRepository(file_path)
     conversation = Conversation()
     user = conversation.add_user("Hello")
     assistant = conversation.add_assistant("Hi")
@@ -36,7 +34,7 @@ def test_load_migrates_legacy_message_id_once(tmp_path):
         json.dumps([{"role": "user", "content": "Legacy"}]),
         encoding="utf-8",
     )
-    repository = JsonConversationRepository(file_path)
+    repository = JSONConversationRepository(file_path)
 
     first_load = repository.load()
     second_load = repository.load()
@@ -50,15 +48,17 @@ def test_load_migrates_legacy_message_id_once(tmp_path):
 def test_load_skips_invalid_records(tmp_path):
     file_path = tmp_path / "chat.json"
     file_path.write_text(
-        json.dumps([
-            {"id": "msg_valid", "role": "user", "content": "Keep"},
-            "not-a-message",
-            {"role": "assistant"},
-        ]),
+        json.dumps(
+            [
+                {"id": "msg_valid", "role": "user", "content": "Keep"},
+                "not-a-message",
+                {"role": "assistant"},
+            ]
+        ),
         encoding="utf-8",
     )
 
-    conversation = JsonConversationRepository(file_path).load()
+    conversation = JSONConversationRepository(file_path).load()
 
     assert [message.id for message in conversation.history()] == ["msg_valid"]
 
@@ -67,7 +67,7 @@ def test_load_invalid_json_returns_empty_conversation(tmp_path):
     file_path = tmp_path / "chat.json"
     file_path.write_text("{invalid", encoding="utf-8")
 
-    conversation = JsonConversationRepository(file_path).load()
+    conversation = JSONConversationRepository(file_path).load()
 
     assert conversation.is_empty()
 
@@ -76,6 +76,6 @@ def test_load_non_list_payload_returns_empty_conversation(tmp_path):
     file_path = tmp_path / "chat.json"
     file_path.write_text('{"messages": []}', encoding="utf-8")
 
-    conversation = JsonConversationRepository(file_path).load()
+    conversation = JSONConversationRepository(file_path).load()
 
     assert conversation.is_empty()

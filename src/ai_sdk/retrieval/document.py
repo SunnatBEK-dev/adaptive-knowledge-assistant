@@ -9,18 +9,14 @@ class Document:
 
     id: str
     content: str
-    metadata: dict[str, str] = field(
-        default_factory=dict
-    )
+    metadata: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.id:
             raise ValueError("Document ID cannot be empty.")
 
         if not self.content.strip():
-            raise ValueError(
-                "Document content cannot be empty."
-            )
+            raise ValueError("Document content cannot be empty.")
 
         self.metadata = dict(self.metadata)
 

@@ -51,13 +51,25 @@ def test_split_produces_stable_chunk_identities():
     first = chunker.split(document)
     second = chunker.split(document)
 
-    assert [chunk.id for chunk in first] == [
-        chunk.id for chunk in second
-    ]
-    assert all(
-        chunk.id.startswith("chunk_")
-        for chunk in first
+    assert [chunk.id for chunk in first] == [chunk.id for chunk in second]
+    assert all(chunk.id.startswith("chunk_") for chunk in first)
+
+
+def test_pdf_pages_are_chunked_independently_with_page_metadata():
+    document = Document(
+        id="doc_pdf",
+        content="First page\f\fThird page",
+        metadata={"source": "guide.pdf", "format": "pdf"},
     )
+
+    chunks = TextChunker(chunk_size=20, overlap=5).split(document)
+
+    assert [chunk.content for chunk in chunks] == [
+        "First page",
+        "Third page",
+    ]
+    assert [chunk.metadata["page"] for chunk in chunks] == ["1", "3"]
+    assert chunks[0].id != chunks[1].id
 
 
 @pytest.mark.parametrize(

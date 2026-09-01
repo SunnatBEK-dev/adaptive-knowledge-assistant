@@ -6,7 +6,7 @@ from google.genai import interactions
 from ai_sdk.application.conversation_manager import ConversationManager
 from ai_sdk.context.prompt_builder import PromptBuilder
 from ai_sdk.llm.gemini import GeminiClient
-from ai_sdk.storage.json import JsonConversationRepository
+from ai_sdk.storage.json import JSONConversationRepository
 from ai_sdk.tools import (
     ToolExecutor,
     ToolParameter,
@@ -14,7 +14,6 @@ from ai_sdk.tools import (
     ToolRegistry,
     ToolSchema,
 )
-
 
 pytestmark = pytest.mark.integration
 
@@ -35,25 +34,25 @@ class ScriptedGemini:
 
 
 def model_output(text):
-    return interactions.ModelOutputStep(
-        content=[interactions.TextContent(text=text)]
-    )
+    return interactions.ModelOutputStep(content=[interactions.TextContent(text=text)])
 
 
 def test_gemini_tool_result_reaches_final_persisted_answer(tmp_path):
-    provider = ScriptedGemini([
-        SimpleNamespace(steps=[
-            interactions.ThoughtStep(signature="opaque"),
-            interactions.FunctionCallStep(
-                id="call_weather_1",
-                name="get_weather",
-                arguments={"city": "Samarqand"},
+    provider = ScriptedGemini(
+        [
+            SimpleNamespace(
+                steps=[
+                    interactions.ThoughtStep(signature="opaque"),
+                    interactions.FunctionCallStep(
+                        id="call_weather_1",
+                        name="get_weather",
+                        arguments={"city": "Samarqand"},
+                    ),
+                ]
             ),
-        ]),
-        SimpleNamespace(steps=[
-            model_output("Samarqandda havo 24°C.")
-        ]),
-    ])
+            SimpleNamespace(steps=[model_output("Samarqandda havo 24°C.")]),
+        ]
+    )
     registry = ToolRegistry()
     registry.register(
         ToolSchema(
@@ -69,7 +68,7 @@ def test_gemini_tool_result_reaches_final_persisted_answer(tmp_path):
         ),
         lambda city: {"city": city, "temperature_c": 24},
     )
-    repository = JsonConversationRepository(tmp_path / "chat.json")
+    repository = JSONConversationRepository(tmp_path / "chat.json")
     conversation = repository.load()
     manager = ConversationManager(
         conversation=conversation,
@@ -82,9 +81,7 @@ def test_gemini_tool_result_reaches_final_persisted_answer(tmp_path):
         tool_executor=ToolExecutor(registry),
     )
 
-    answer = manager.send_message(
-        "Samarqanddagi ob-havoni tekshir."
-    )
+    answer = manager.send_message("Samarqanddagi ob-havoni tekshir.")
     restored = repository.load()
 
     assert answer == "Samarqandda havo 24°C."
@@ -102,11 +99,10 @@ def test_gemini_tool_result_reaches_final_persisted_answer(tmp_path):
         "type": "function_result",
         "name": "get_weather",
         "call_id": "call_weather_1",
-        "result": [{
-            "type": "text",
-            "text": (
-                '{"city": "Samarqand", '
-                '"temperature_c": 24}'
-            ),
-        }],
+        "result": [
+            {
+                "type": "text",
+                "text": ('{"city": "Samarqand", "temperature_c": 24}'),
+            }
+        ],
     }

@@ -32,9 +32,7 @@ from ai_sdk.tools import (
 class AdapterTransport(BaseMCPTransport):
     def __init__(self):
         self.requests = []
-        self.tool_result = MCPToolResult(
-            [MCPContentBlock.text("remote success")]
-        )
+        self.tool_result = MCPToolResult([MCPContentBlock.text("remote success")])
 
     def open(self, *, timeout_seconds):
         pass
@@ -221,9 +219,7 @@ def test_adapter_contains_tools_that_require_manual_host_input():
     )
 
     assert result.is_error
-    assert result.content == (
-        "Remote MCP tool requires explicit host input."
-    )
+    assert result.content == ("Remote MCP tool requires explicit host input.")
 
 
 @pytest.mark.parametrize(
@@ -270,9 +266,7 @@ def test_adapter_serializes_structured_and_non_text_results(
     )
     client.open()
 
-    result = ToolExecutor(registry).execute(
-        ToolCall("call-1", "remote", {})
-    )
+    result = ToolExecutor(registry).execute(ToolCall("call-1", "remote", {}))
 
     assert result.content == expected
     assert not result.is_error
@@ -289,9 +283,7 @@ def test_adapter_validation_is_atomic_before_registry_changes():
                 make_tool("compatible"),
                 make_tool(
                     "nested",
-                    properties={
-                        "items": {"type": "array"}
-                    },
+                    properties={"items": {"type": "array"}},
                     required=["items"],
                 ),
             ],
@@ -370,21 +362,13 @@ def test_adapter_rejects_invalid_selection(
         make_tool(required=["missing"]),
         make_tool(additionalProperties={}),
         make_tool(properties={"query": "invalid"}),
-        make_tool(
-            properties={
-                "query": {"type": "string", "enum": ["one"]}
-            }
-        ),
+        make_tool(properties={"query": {"type": "string", "enum": ["one"]}}),
         make_tool(properties={"query": {"type": "array"}}),
         make_tool(
             properties={"invalid-name": {"type": "string"}},
             required=[],
         ),
-        make_tool(
-            properties={
-                "query": {"type": "string", "description": 1}
-            }
-        ),
+        make_tool(properties={"query": {"type": "string", "description": 1}}),
     ],
 )
 def test_adapter_rejects_schemas_local_layer_cannot_validate(tool):

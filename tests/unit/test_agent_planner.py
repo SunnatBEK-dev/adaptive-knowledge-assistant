@@ -158,12 +158,16 @@ def test_plan_step_rejects_invalid_fields(step):
 
 
 def test_llm_planner_creates_bounded_provider_neutral_plan():
-    client = FakePlannerClient(json.dumps({
-        "steps": [
-            "Inspect the repository",
-            "Implement the change",
-        ],
-    }))
+    client = FakePlannerClient(
+        json.dumps(
+            {
+                "steps": [
+                    "Inspect the repository",
+                    "Implement the change",
+                ],
+            }
+        )
+    )
     planner = LLMAgentPlanner(client, max_steps=4)
 
     plan = planner.create_plan(" Add search support ")
@@ -174,9 +178,7 @@ def test_llm_planner_creates_bounded_provider_neutral_plan():
         PlanStep("step_2", "Implement the change"),
     )
     assert client.messages[0]["role"] == "user"
-    assert 'Goal: "Add search support"' in (
-        client.messages[0]["content"]
-    )
+    assert 'Goal: "Add search support"' in (client.messages[0]["content"])
     assert "between 1 and 4" in client.messages[0]["content"]
 
 
@@ -215,9 +217,7 @@ def test_llm_planner_rejects_invalid_client_goal_or_response_type():
     with pytest.raises(TypeError, match="BaseLLMClient"):
         LLMAgentPlanner(object())
 
-    planner = LLMAgentPlanner(
-        FakePlannerClient('{"steps": ["one"]}')
-    )
+    planner = LLMAgentPlanner(FakePlannerClient('{"steps": ["one"]}'))
 
     with pytest.raises(PlanValidationError, match="goal"):
         planner.create_plan(" ")

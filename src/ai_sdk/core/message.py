@@ -26,10 +26,7 @@ class Message:
     @classmethod
     def from_dict(cls, data: dict) -> "Message":
         return cls(
-            id=(
-                data.get("id")
-                or f"msg_{uuid4().hex[:8]}"
-            ),
+            id=(data.get("id") or f"msg_{uuid4().hex[:8]}"),
             role=data["role"],
             content=data["content"],
         )

@@ -9,8 +9,8 @@ from ai_sdk.agents import (
     MultiAgentCoordinator,
     SequentialHandoffCoordinator,
 )
+from ai_sdk.llm.adaptive_multi_model import MultiModelWorkflowClient
 from ai_sdk.llm.base import BaseToolLLMClient
-from ai_sdk.llm.super_ai import SuperAIClient
 from ai_sdk.tools import ToolExecutor, ToolRegistry
 
 
@@ -42,21 +42,25 @@ def build_client(provider_client):
             ToolExecutor(ToolRegistry()),
         ),
     )
-    return SuperAIClient(SequentialHandoffCoordinator(
-        MultiAgentCoordinator([worker]),
-        [HandoffStage("final", "worker", "Answer")],
-    ))
+    return MultiModelWorkflowClient(
+        SequentialHandoffCoordinator(
+            MultiAgentCoordinator([worker]),
+            [HandoffStage("final", "worker", "Answer")],
+        )
+    )
 
 
-def test_super_ai_client_exposes_workflow_as_text_client():
+def test_adaptive_client_exposes_workflow_as_text_client():
     provider = Client("combined answer")
     client = build_client(provider)
 
-    response = client.ask([
-        {"role": "user", "content": "Question"},
-        {"role": "assistant", "content": "Older answer"},
-        {"role": "user", "content": "Follow-up"},
-    ])
+    response = client.ask(
+        [
+            {"role": "user", "content": "Question"},
+            {"role": "assistant", "content": "Older answer"},
+            {"role": "user", "content": "Follow-up"},
+        ]
+    )
 
     assert response == "combined answer"
     assert client.last_result.completed is True
@@ -67,10 +71,8 @@ def test_super_ai_client_exposes_workflow_as_text_client():
     assert "USER: Follow-up" in prompt
 
 
-def test_super_ai_client_contains_stage_failure():
-    client = build_client(
-        Client(error=RuntimeError("private detail"))
-    )
+def test_adaptive_client_contains_stage_failure():
+    client = build_client(Client(error=RuntimeError("private detail")))
 
     with pytest.raises(RuntimeError, match="stage: final") as error:
         client.ask([{"role": "user", "content": "Question"}])
@@ -79,7 +81,7 @@ def test_super_ai_client_contains_stage_failure():
     assert client.last_result.completed is False
 
 
-def test_super_ai_client_rejects_streaming_and_invalid_input():
+def test_adaptive_client_rejects_streaming_and_invalid_input():
     client = build_client(Client())
 
     with pytest.raises(RuntimeError, match="streaming"):
@@ -91,4 +93,4 @@ def test_super_ai_client_rejects_streaming_and_invalid_input():
     with pytest.raises(TypeError, match="content"):
         client.ask([{"role": "user", "content": None}])
     with pytest.raises(TypeError, match="workflow"):
-        SuperAIClient(object())
+        MultiModelWorkflowClient(object())

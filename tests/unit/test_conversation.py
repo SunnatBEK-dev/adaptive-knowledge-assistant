@@ -1,5 +1,5 @@
-from ai_sdk.core.message import Message
 from ai_sdk.core.conversation import Conversation
+from ai_sdk.core.message import Message
 
 
 def test_new_conversation_is_empty():

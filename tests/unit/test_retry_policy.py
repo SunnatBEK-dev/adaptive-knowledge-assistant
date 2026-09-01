@@ -43,10 +43,12 @@ def test_policy_uses_bounded_deterministic_backoff():
         backoff_multiplier=2,
     )
 
-    assert [
-        policy.delay_before_retry(number)
-        for number in range(1, 5)
-    ] == [0.5, 1.0, 1.5, 1.5]
+    assert [policy.delay_before_retry(number) for number in range(1, 5)] == [
+        0.5,
+        1.0,
+        1.5,
+        1.5,
+    ]
 
 
 @pytest.mark.parametrize(

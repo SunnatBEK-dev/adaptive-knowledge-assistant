@@ -5,14 +5,13 @@ import pytest
 from ai_sdk.observability import (
     InMemoryTraceCollector,
     TraceCategory,
+    Tracer,
     TraceRecord,
     TraceStatus,
     TraceValidationError,
-    Tracer,
     sanitize_trace_attributes,
     trace_span,
 )
-
 
 TRACE_ID = "1" * 32
 OTHER_TRACE_ID = "2" * 32

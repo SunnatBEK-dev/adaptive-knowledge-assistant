@@ -3,25 +3,28 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-
-_RETRYABLE_STATUS_CODES = frozenset({
-    408,
-    409,
-    429,
-    500,
-    502,
-    503,
-    504,
-})
-_RETRYABLE_ERROR_NAMES = frozenset({
-    "APIConnectionError",
-    "APITimeoutError",
-    "InternalServerError",
-    "OverloadedError",
-    "RateLimitError",
-    "RetryableError",
-    "ServerError",
-})
+_RETRYABLE_STATUS_CODES = frozenset(
+    {
+        408,
+        409,
+        429,
+        500,
+        502,
+        503,
+        504,
+    }
+)
+_RETRYABLE_ERROR_NAMES = frozenset(
+    {
+        "APIConnectionError",
+        "APITimeoutError",
+        "InternalServerError",
+        "OverloadedError",
+        "RateLimitError",
+        "RetryableError",
+        "ServerError",
+    }
+)
 _MAX_ATTEMPTS = 10
 
 
@@ -58,21 +61,15 @@ class RetryPolicy:
                 or isinstance(value, bool)
                 or not math.isfinite(value)
             ):
-                raise RetryValidationError(
-                    f"Retry {label} must be finite."
-                )
+                raise RetryValidationError(f"Retry {label} must be finite.")
         if self.initial_delay_seconds < 0:
-            raise RetryValidationError(
-                "Retry initial delay cannot be negative."
-            )
+            raise RetryValidationError("Retry initial delay cannot be negative.")
         if self.max_delay_seconds < self.initial_delay_seconds:
             raise RetryValidationError(
                 "Retry maximum delay cannot be below initial delay."
             )
         if self.backoff_multiplier < 1:
-            raise RetryValidationError(
-                "Retry backoff multiplier cannot be below one."
-            )
+            raise RetryValidationError("Retry backoff multiplier cannot be below one.")
 
     def should_retry(self, error: Exception) -> bool:
         if not isinstance(error, Exception):

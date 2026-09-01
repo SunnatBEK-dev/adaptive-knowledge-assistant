@@ -56,9 +56,7 @@ class GeminiClient(BaseToolLLMClient):
         self.timeout = timeout
 
         if not self.model:
-            raise RuntimeError(
-                "GEMINI_MODEL or MODEL is not configured."
-            )
+            raise RuntimeError("GEMINI_MODEL or MODEL is not configured.")
 
         if client is not None:
             self.client = client
@@ -66,9 +64,7 @@ class GeminiClient(BaseToolLLMClient):
 
         resolved_api_key = api_key or GEMINI_API_KEY
         if not resolved_api_key:
-            raise RuntimeError(
-                "GEMINI_API_KEY is not configured."
-            )
+            raise RuntimeError("GEMINI_API_KEY is not configured.")
 
         self.client = genai.Client(
             api_key=resolved_api_key,
@@ -85,9 +81,7 @@ class GeminiClient(BaseToolLLMClient):
         response = self.client.interactions.create(**request)
         output_text = getattr(response, "output_text", None)
         if not isinstance(output_text, str):
-            raise RuntimeError(
-                "Gemini interaction output text is invalid."
-            )
+            raise RuntimeError("Gemini interaction output text is invalid.")
         return output_text
 
     def stream(
@@ -106,9 +100,7 @@ class GeminiClient(BaseToolLLMClient):
                 continue
             text = getattr(delta, "text", None)
             if not isinstance(text, str):
-                raise RuntimeError(
-                    "Gemini streaming text delta is invalid."
-                )
+                raise RuntimeError("Gemini streaming text delta is invalid.")
             yield text
 
     def complete_tool_turn(
@@ -133,22 +125,16 @@ class GeminiClient(BaseToolLLMClient):
         if system_instruction:
             request["system_instruction"] = system_instruction
         if schemas:
-            request["tools"] = [
-                self._tool_schema(schema) for schema in schemas
-            ]
+            request["tools"] = [self._tool_schema(schema) for schema in schemas]
 
         response = self.client.interactions.create(**request)
-        return self._parse_agent_response(
-            getattr(response, "steps", None)
-        )
+        return self._parse_agent_response(getattr(response, "steps", None))
 
     def _request(
         self,
         messages: list[LLMMessage],
     ) -> dict[str, object]:
-        system_instruction, provider_input = self._base_input(
-            messages
-        )
+        system_instruction, provider_input = self._base_input(messages)
         request: dict[str, object] = {
             "model": self.model,
             "input": provider_input,
@@ -180,13 +166,13 @@ class GeminiClient(BaseToolLLMClient):
             elif role == "assistant":
                 step_type = "model_output"
             else:
-                raise RuntimeError(
-                    f"Gemini message role is unsupported: {role}."
-                )
-            provider_input.append({
-                "type": step_type,
-                "content": [{"type": "text", "text": content}],
-            })
+                raise RuntimeError(f"Gemini message role is unsupported: {role}.")
+            provider_input.append(
+                {
+                    "type": step_type,
+                    "content": [{"type": "text", "text": content}],
+                }
+            )
 
         return "\n\n".join(instructions), provider_input
 
@@ -196,9 +182,7 @@ class GeminiClient(BaseToolLLMClient):
         messages: list[LLMMessage],
         events: tuple[AgentEvent, ...],
     ) -> tuple[str, list[dict[str, object]]]:
-        system_instruction, provider_input = cls._base_input(
-            messages
-        )
+        system_instruction, provider_input = cls._base_input(messages)
         for event in events:
             provider_steps = getattr(
                 event.response,
@@ -206,14 +190,11 @@ class GeminiClient(BaseToolLLMClient):
                 None,
             )
             if provider_steps is None:
-                provider_input.extend(
-                    cls._neutral_response_steps(event.response)
-                )
+                provider_input.extend(cls._neutral_response_steps(event.response))
             else:
                 provider_input.extend(deepcopy(provider_steps))
             provider_input.extend(
-                cls._tool_result_input(result)
-                for result in event.tool_results
+                cls._tool_result_input(result) for result in event.tool_results
             )
         return system_instruction, provider_input
 
@@ -224,20 +205,26 @@ class GeminiClient(BaseToolLLMClient):
         steps: list[dict[str, object]] = []
         for block in response.blocks:
             if isinstance(block, AgentTextBlock):
-                steps.append({
-                    "type": "model_output",
-                    "content": [{
-                        "type": "text",
-                        "text": block.text,
-                    }],
-                })
+                steps.append(
+                    {
+                        "type": "model_output",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": block.text,
+                            }
+                        ],
+                    }
+                )
             else:
-                steps.append({
-                    "type": "function_call",
-                    "id": block.id,
-                    "name": block.name,
-                    "arguments": deepcopy(block.arguments),
-                })
+                steps.append(
+                    {
+                        "type": "function_call",
+                        "id": block.id,
+                        "name": block.name,
+                        "arguments": deepcopy(block.arguments),
+                    }
+                )
         return steps
 
     @staticmethod
@@ -248,10 +235,12 @@ class GeminiClient(BaseToolLLMClient):
             "type": "function_result",
             "name": result.name,
             "call_id": result.call_id,
-            "result": [{
-                "type": "text",
-                "text": result.content,
-            }],
+            "result": [
+                {
+                    "type": "text",
+                    "text": result.content,
+                }
+            ],
         }
         if result.is_error:
             provider_result["is_error"] = True
@@ -275,9 +264,7 @@ class GeminiClient(BaseToolLLMClient):
         steps: object,
     ) -> AgentModelResponse:
         if not isinstance(steps, list):
-            raise RuntimeError(
-                "Gemini interaction steps must be a list."
-            )
+            raise RuntimeError("Gemini interaction steps must be a list.")
 
         parsed_blocks: list[AgentResponseBlock] = []
         provider_steps: list[dict[str, object]] = []
@@ -300,9 +287,7 @@ class GeminiClient(BaseToolLLMClient):
                     arguments=getattr(step, "arguments", None),
                 )
             except (TypeError, ValueError) as error:
-                raise RuntimeError(
-                    "Gemini function-call step is invalid."
-                ) from error
+                raise RuntimeError("Gemini function-call step is invalid.") from error
             parsed_blocks.append(call)
 
         return _GeminiModelResponse(
@@ -314,14 +299,10 @@ class GeminiClient(BaseToolLLMClient):
     def _dump_step(step: object) -> dict[str, object]:
         model_dump = getattr(step, "model_dump", None)
         if not callable(model_dump):
-            raise RuntimeError(
-                "Gemini interaction step cannot be preserved."
-            )
+            raise RuntimeError("Gemini interaction step cannot be preserved.")
         dumped = model_dump()
         if not isinstance(dumped, dict):
-            raise RuntimeError(
-                "Gemini interaction step dump is invalid."
-            )
+            raise RuntimeError("Gemini interaction step dump is invalid.")
         return dumped
 
     @staticmethod
@@ -330,15 +311,11 @@ class GeminiClient(BaseToolLLMClient):
         content: object,
     ) -> None:
         if not isinstance(content, list):
-            raise RuntimeError(
-                "Gemini model output content must be a list."
-            )
+            raise RuntimeError("Gemini model output content must be a list.")
         for block in content:
             if getattr(block, "type", None) != "text":
                 continue
             text = getattr(block, "text", None)
             if not isinstance(text, str):
-                raise RuntimeError(
-                    "Gemini model output text is invalid."
-                )
+                raise RuntimeError("Gemini model output text is invalid.")
             parsed_blocks.append(AgentTextBlock(text))

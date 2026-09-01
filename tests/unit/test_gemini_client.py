@@ -43,10 +43,7 @@ class FakeGemini:
 def step(step_type, **values):
     dump = {
         "type": step_type,
-        **{
-            key: _dump_value(value)
-            for key, value in values.items()
-        },
+        **{key: _dump_value(value) for key, value in values.items()},
     }
     return FakeStep(type=step_type, dump=dump, **values)
 
@@ -56,9 +53,7 @@ def _dump_value(value):
         return [_dump_value(item) for item in value]
     if isinstance(value, SimpleNamespace):
         return {
-            key: _dump_value(item)
-            for key, item in vars(value).items()
-            if key != "dump"
+            key: _dump_value(item) for key, item in vars(value).items() if key != "dump"
         }
     return deepcopy(value)
 
@@ -115,9 +110,11 @@ def build_add_executor(handler=lambda left, right: left + right):
 
 
 def test_ask_uses_stateless_interactions_api():
-    provider = FakeGemini([
-        interaction(output_text="Salom"),
-    ])
+    provider = FakeGemini(
+        [
+            interaction(output_text="Salom"),
+        ]
+    )
     client = GeminiClient(
         client=provider,
         model="gemini-test",
@@ -134,31 +131,29 @@ def test_ask_uses_stateless_interactions_api():
     result = client.ask(messages)
 
     assert result == "Salom"
-    assert provider.interactions.create_calls == [{
-        "model": "gemini-test",
-        "input": [
-            {
-                "type": "user_input",
-                "content": [{"type": "text", "text": "Hi"}],
-            },
-            {
-                "type": "model_output",
-                "content": [
-                    {"type": "text", "text": "Hello"}
-                ],
-            },
-            {
-                "type": "user_input",
-                "content": [
-                    {"type": "text", "text": "Continue"}
-                ],
-            },
-        ],
-        "generation_config": {"max_output_tokens": 77},
-        "store": False,
-        "timeout": 12.0,
-        "system_instruction": "Be concise.",
-    }]
+    assert provider.interactions.create_calls == [
+        {
+            "model": "gemini-test",
+            "input": [
+                {
+                    "type": "user_input",
+                    "content": [{"type": "text", "text": "Hi"}],
+                },
+                {
+                    "type": "model_output",
+                    "content": [{"type": "text", "text": "Hello"}],
+                },
+                {
+                    "type": "user_input",
+                    "content": [{"type": "text", "text": "Continue"}],
+                },
+            ],
+            "generation_config": {"max_output_tokens": 77},
+            "store": False,
+            "timeout": 12.0,
+            "system_instruction": "Be concise.",
+        }
+    ]
     assert messages[1]["content"] == "Hi"
 
 
@@ -166,11 +161,13 @@ def test_multiple_system_messages_are_combined():
     provider = FakeGemini([interaction(output_text="OK")])
     client = GeminiClient(client=provider, model="gemini-test")
 
-    client.ask([
-        {"role": "system", "content": "First"},
-        {"role": "system", "content": "Second"},
-        {"role": "user", "content": "Go"},
-    ])
+    client.ask(
+        [
+            {"role": "system", "content": "First"},
+            {"role": "system", "content": "Second"},
+            {"role": "user", "content": "Go"},
+        ]
+    )
 
     request = provider.interactions.create_calls[0]
     assert request["system_instruction"] == "First\n\nSecond"
@@ -195,9 +192,7 @@ def test_stream_yields_only_text_step_deltas():
     provider = FakeGemini([stream])
     client = GeminiClient(client=provider, model="gemini-test")
 
-    chunks = list(client.stream([
-        {"role": "user", "content": "Hi"}
-    ]))
+    chunks = list(client.stream([{"role": "user", "content": "Hi"}]))
 
     assert chunks == ["one", "two"]
     assert provider.interactions.create_calls[0]["stream"] is True
@@ -208,22 +203,22 @@ def test_ask_with_tools_preserves_all_gemini_steps():
         "type": "thought",
         "signature": "opaque-signature",
     }
-    provider = FakeGemini([
-        interaction(
-            FakeStep(type="thought", dump=thought_dump),
-            model_output("I will calculate it."),
-            function_call(
-                "call_1",
-                "add",
-                {"left": 2, "right": 3},
+    provider = FakeGemini(
+        [
+            interaction(
+                FakeStep(type="thought", dump=thought_dump),
+                model_output("I will calculate it."),
+                function_call(
+                    "call_1",
+                    "add",
+                    {"left": 2, "right": 3},
+                ),
             ),
-        ),
-        interaction(model_output("The answer is 5.")),
-    ])
+            interaction(model_output("The answer is 5.")),
+        ]
+    )
     client = GeminiClient(client=provider, model="gemini-test")
-    messages = [
-        {"role": "user", "content": "What is 2 + 3?"}
-    ]
+    messages = [{"role": "user", "content": "What is 2 + 3?"}]
 
     result = client.ask_with_tools(
         messages,
@@ -231,45 +226,49 @@ def test_ask_with_tools_preserves_all_gemini_steps():
     )
 
     assert result == "The answer is 5."
-    assert messages == [
-        {"role": "user", "content": "What is 2 + 3?"}
-    ]
+    assert messages == [{"role": "user", "content": "What is 2 + 3?"}]
     first_call, second_call = provider.interactions.create_calls
-    assert first_call["tools"] == [{
-        "type": "function",
-        "name": "add",
-        "description": "Add two integers.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "left": {
-                    "type": "integer",
-                    "description": "First integer.",
+    assert first_call["tools"] == [
+        {
+            "type": "function",
+            "name": "add",
+            "description": "Add two integers.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "left": {
+                        "type": "integer",
+                        "description": "First integer.",
+                    },
+                    "right": {
+                        "type": "integer",
+                        "description": "Second integer.",
+                    },
                 },
-                "right": {
-                    "type": "integer",
-                    "description": "Second integer.",
-                },
+                "required": ["left", "right"],
+                "additionalProperties": False,
             },
-            "required": ["left", "right"],
-            "additionalProperties": False,
-        },
-    }]
+        }
+    ]
     assert second_call["input"] == [
         {
             "type": "user_input",
-            "content": [{
-                "type": "text",
-                "text": "What is 2 + 3?",
-            }],
+            "content": [
+                {
+                    "type": "text",
+                    "text": "What is 2 + 3?",
+                }
+            ],
         },
         thought_dump,
         {
             "type": "model_output",
-            "content": [{
-                "type": "text",
-                "text": "I will calculate it.",
-            }],
+            "content": [
+                {
+                    "type": "text",
+                    "text": "I will calculate it.",
+                }
+            ],
         },
         {
             "type": "function_call",
@@ -287,10 +286,12 @@ def test_ask_with_tools_preserves_all_gemini_steps():
 
 
 def test_tool_errors_are_marked_in_function_result():
-    provider = FakeGemini([
-        interaction(function_call("missing_1", "missing", {})),
-        interaction(model_output("Tool unavailable.")),
-    ])
+    provider = FakeGemini(
+        [
+            interaction(function_call("missing_1", "missing", {})),
+            interaction(model_output("Tool unavailable.")),
+        ]
+    )
     client = GeminiClient(client=provider, model="gemini-test")
 
     result = client.ask_with_tools(
@@ -304,18 +305,22 @@ def test_tool_errors_are_marked_in_function_result():
         "type": "function_result",
         "name": "missing",
         "call_id": "missing_1",
-        "result": [{
-            "type": "text",
-            "text": "Unknown tool: missing",
-        }],
+        "result": [
+            {
+                "type": "text",
+                "text": "Unknown tool: missing",
+            }
+        ],
         "is_error": True,
     }
 
 
 def test_complete_turn_without_tools_omits_tools_field():
-    provider = FakeGemini([
-        interaction(model_output("Done.")),
-    ])
+    provider = FakeGemini(
+        [
+            interaction(model_output("Done.")),
+        ]
+    )
     client = GeminiClient(client=provider, model="gemini-test")
 
     response = client.complete_tool_turn(
@@ -334,10 +339,12 @@ def test_complete_turn_without_tools_omits_tools_field():
 
 
 def test_agent_input_can_reconstruct_neutral_events():
-    response = AgentModelResponse([
-        AgentTextBlock("Checking."),
-        ToolCall("call_1", "add", {"left": 1, "right": 2}),
-    ])
+    response = AgentModelResponse(
+        [
+            AgentTextBlock("Checking."),
+            ToolCall("call_1", "add", {"left": 1, "right": 2}),
+        ]
+    )
     event = AgentEvent(
         1,
         response,
@@ -358,16 +365,18 @@ def test_agent_input_can_reconstruct_neutral_events():
 
 
 def test_parser_ignores_non_text_content_and_unknown_steps():
-    parsed = GeminiClient._parse_agent_response([
-        step("thought", signature="opaque"),
-        step(
-            "model_output",
-            content=[
-                SimpleNamespace(type="image"),
-                text_content("Answer"),
-            ],
-        ),
-    ])
+    parsed = GeminiClient._parse_agent_response(
+        [
+            step("thought", signature="opaque"),
+            step(
+                "model_output",
+                content=[
+                    SimpleNamespace(type="image"),
+                    text_content("Answer"),
+                ],
+            ),
+        ]
+    )
 
     assert parsed.text == "Answer"
     assert parsed.tool_calls == ()
@@ -385,10 +394,12 @@ class InvalidDumpStep(SimpleNamespace):
         [SimpleNamespace(type="thought")],
         [InvalidDumpStep(type="thought")],
         [step("model_output", content="invalid")],
-        [step(
-            "model_output",
-            content=[SimpleNamespace(type="text", text=None)],
-        )],
+        [
+            step(
+                "model_output",
+                content=[SimpleNamespace(type="text", text=None)],
+            )
+        ],
         [function_call("", "add", {})],
         [function_call("call_1", "add", [])],
     ],
@@ -399,9 +410,11 @@ def test_parser_rejects_malformed_provider_steps(steps):
 
 
 def test_ask_rejects_invalid_output_text():
-    provider = FakeGemini([
-        SimpleNamespace(output_text=None),
-    ])
+    provider = FakeGemini(
+        [
+            SimpleNamespace(output_text=None),
+        ]
+    )
     client = GeminiClient(client=provider, model="gemini-test")
 
     with pytest.raises(RuntimeError, match="output text"):
@@ -409,12 +422,16 @@ def test_ask_rejects_invalid_output_text():
 
 
 def test_stream_rejects_invalid_text_delta():
-    provider = FakeGemini([[
-        SimpleNamespace(
-            event_type="step.delta",
-            delta=SimpleNamespace(type="text", text=None),
-        )
-    ]])
+    provider = FakeGemini(
+        [
+            [
+                SimpleNamespace(
+                    event_type="step.delta",
+                    delta=SimpleNamespace(type="text", text=None),
+                )
+            ]
+        ]
+    )
     client = GeminiClient(client=provider, model="gemini-test")
 
     with pytest.raises(RuntimeError, match="delta"):

@@ -4,7 +4,6 @@ from ai_sdk.core.conversation import Conversation
 
 
 class ConversationRepository(ABC):
-
     @abstractmethod
     def save(
         self,

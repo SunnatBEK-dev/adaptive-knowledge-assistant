@@ -30,23 +30,14 @@ class ToolParameter:
             label="Tool parameter name",
         )
 
-        if (
-            not isinstance(self.description, str)
-            or not self.description.strip()
-        ):
-            raise ToolValidationError(
-                "Tool parameter description cannot be empty."
-            )
+        if not isinstance(self.description, str) or not self.description.strip():
+            raise ToolValidationError("Tool parameter description cannot be empty.")
 
         if not isinstance(self.type, ToolParameterType):
-            raise ToolValidationError(
-                "Tool parameter type is not supported."
-            )
+            raise ToolValidationError("Tool parameter type is not supported.")
 
         if not isinstance(self.required, bool):
-            raise ToolValidationError(
-                "Tool parameter required flag must be boolean."
-            )
+            raise ToolValidationError("Tool parameter required flag must be boolean.")
 
     def accepts(self, value: object) -> bool:
         if self.type is ToolParameterType.STRING:
@@ -56,10 +47,7 @@ class ToolParameter:
             return isinstance(value, bool)
 
         if self.type is ToolParameterType.INTEGER:
-            return (
-                isinstance(value, int)
-                and not isinstance(value, bool)
-            )
+            return isinstance(value, int) and not isinstance(value, bool)
 
         if isinstance(value, int) and not isinstance(value, bool):
             return True
@@ -94,78 +82,48 @@ class ToolSchema:
             label="Tool name",
         )
 
-        if (
-            not isinstance(self.description, str)
-            or not self.description.strip()
-        ):
-            raise ToolValidationError(
-                "Tool description cannot be empty."
-            )
+        if not isinstance(self.description, str) or not self.description.strip():
+            raise ToolValidationError("Tool description cannot be empty.")
 
         if any(
-            not isinstance(parameter, ToolParameter)
-            for parameter in self.parameters
+            not isinstance(parameter, ToolParameter) for parameter in self.parameters
         ):
-            raise ToolValidationError(
-                "Tool parameters must use ToolParameter objects."
-            )
+            raise ToolValidationError("Tool parameters must use ToolParameter objects.")
 
-        parameter_names = [
-            parameter.name
-            for parameter in self.parameters
-        ]
+        parameter_names = [parameter.name for parameter in self.parameters]
 
         if len(parameter_names) != len(set(parameter_names)):
-            raise ToolValidationError(
-                "Tool parameter names must be unique."
-            )
+            raise ToolValidationError("Tool parameter names must be unique.")
 
     def validate_arguments(
         self,
         arguments: Mapping[str, object],
     ) -> dict[str, object]:
         if not isinstance(arguments, Mapping):
-            raise ToolValidationError(
-                "Tool arguments must be an object."
-            )
+            raise ToolValidationError("Tool arguments must be an object.")
 
         validated = dict(arguments)
 
-        if any(
-            not isinstance(name, str)
-            for name in validated
-        ):
-            raise ToolValidationError(
-                "Tool argument names must be strings."
-            )
+        if any(not isinstance(name, str) for name in validated):
+            raise ToolValidationError("Tool argument names must be strings.")
 
-        parameter_by_name = {
-            parameter.name: parameter
-            for parameter in self.parameters
-        }
-        unknown_names = sorted(
-            set(validated) - set(parameter_by_name)
-        )
+        parameter_by_name = {parameter.name: parameter for parameter in self.parameters}
+        unknown_names = sorted(set(validated) - set(parameter_by_name))
 
         if unknown_names:
             raise ToolValidationError(
-                "Unknown tool arguments: "
-                + ", ".join(unknown_names)
-                + "."
+                "Unknown tool arguments: " + ", ".join(unknown_names) + "."
             )
 
         missing_names = [
             parameter.name
             for parameter in self.parameters
-            if parameter.required
-            and parameter.name not in validated
+            if parameter.required and parameter.name not in validated
         ]
 
         if missing_names:
             raise ToolValidationError(
-                "Missing required tool arguments: "
-                + ", ".join(missing_names)
-                + "."
+                "Missing required tool arguments: " + ", ".join(missing_names) + "."
             )
 
         for name, value in validated.items():
@@ -173,17 +131,14 @@ class ToolSchema:
 
             if not parameter.accepts(value):
                 raise ToolValidationError(
-                    f"Tool argument '{name}' must be "
-                    f"{parameter.type.value}."
+                    f"Tool argument '{name}' must be {parameter.type.value}."
                 )
 
         return validated
 
     def to_json_schema(self) -> dict[str, object]:
         required = [
-            parameter.name
-            for parameter in self.parameters
-            if parameter.required
+            parameter.name for parameter in self.parameters if parameter.required
         ]
 
         return {
@@ -206,15 +161,9 @@ class ToolSchema:
 
 def _validate_identifier(name: str, *, label: str) -> None:
     if not isinstance(name, str) or not name.strip():
-        raise ToolValidationError(
-            f"{label} cannot be empty."
-        )
+        raise ToolValidationError(f"{label} cannot be empty.")
 
-    if (
-        re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", name)
-        is None
-        or keyword.iskeyword(name)
+    if re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", name) is None or keyword.iskeyword(
+        name
     ):
-        raise ToolValidationError(
-            f"{label} must be a valid identifier."
-        )
+        raise ToolValidationError(f"{label} must be a valid identifier.")

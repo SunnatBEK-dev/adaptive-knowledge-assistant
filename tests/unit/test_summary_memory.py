@@ -13,16 +13,11 @@ def test_summary_keeps_recent_excluded_dialogue_in_order():
         {"role": "user", "content": "Recent question"},
         {"role": "assistant", "content": "Recent answer"},
     ]
-    summarizer = ExtractiveConversationSummarizer(
-        max_tokens=8
-    )
+    summarizer = ExtractiveConversationSummarizer(max_tokens=8)
 
     summary = summarizer.summarize(messages)
 
-    assert summary == (
-        "User: Recent question\n"
-        "Assistant: Recent answer"
-    )
+    assert summary == ("User: Recent question\nAssistant: Recent answer")
 
 
 def test_summary_normalizes_whitespace_and_honors_budget():
@@ -32,10 +27,14 @@ def test_summary_normalizes_whitespace_and_honors_budget():
         token_counter=counter,
     )
 
-    summary = summarizer.summarize([{
-        "role": "user",
-        "content": "Very   long\n historical detail",
-    }])
+    summary = summarizer.summarize(
+        [
+            {
+                "role": "user",
+                "content": "Very   long\n historical detail",
+            }
+        ]
+    )
 
     assert summary.startswith("User:")
     assert "  " not in summary
@@ -43,13 +42,9 @@ def test_summary_normalizes_whitespace_and_honors_budget():
 
 
 def test_summary_skips_blank_messages():
-    summarizer = ExtractiveConversationSummarizer(
-        max_tokens=10
-    )
+    summarizer = ExtractiveConversationSummarizer(max_tokens=10)
 
-    assert summarizer.summarize([
-        {"role": "user", "content": "   "}
-    ]) == ""
+    assert summarizer.summarize([{"role": "user", "content": "   "}]) == ""
 
 
 def test_summary_rejects_non_positive_budget():

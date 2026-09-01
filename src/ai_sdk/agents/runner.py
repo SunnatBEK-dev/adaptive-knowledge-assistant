@@ -6,11 +6,11 @@ from ai_sdk.agents.model import (
     AgentModelResponse,
     AgentStopReason,
 )
-from ai_sdk.agents.state import AgentState
 from ai_sdk.agents.progress import (
     CancellationToken,
     WorkflowCancelledError,
 )
+from ai_sdk.agents.state import AgentState
 from ai_sdk.llm.base import BaseToolLLMClient
 from ai_sdk.llm.retry import RetryPolicy
 from ai_sdk.llm.types import LLMMessage
@@ -21,7 +21,6 @@ from ai_sdk.observability import (
 )
 from ai_sdk.tools.executor import ToolExecutor
 from ai_sdk.tools.schema import ToolSchema
-
 
 AgentEventHandler = Callable[[AgentEvent], None]
 
@@ -40,23 +39,17 @@ class AgentRunner:
         sleep: Callable[[float], None] = default_sleep,
     ) -> None:
         if not isinstance(client, BaseToolLLMClient):
-            raise TypeError(
-                "Agent client must support tool turns."
-            )
+            raise TypeError("Agent client must support tool turns.")
 
         if not isinstance(executor, ToolExecutor):
-            raise TypeError(
-                "Tool executor must be a ToolExecutor."
-            )
+            raise TypeError("Tool executor must be a ToolExecutor.")
 
         if (
             not isinstance(max_tool_rounds, int)
             or isinstance(max_tool_rounds, bool)
             or max_tool_rounds <= 0
         ):
-            raise ValueError(
-                "Maximum tool rounds must be greater than zero."
-            )
+            raise ValueError("Maximum tool rounds must be greater than zero.")
         if tracer is not None and not isinstance(tracer, Tracer):
             raise TypeError("Agent tracer must be a Tracer.")
         if retry_policy is not None and not isinstance(
@@ -96,6 +89,9 @@ class AgentRunner:
                 on_event=on_event,
                 cancellation=cancellation,
             )
+            stop_reason = state.stop_reason
+            if stop_reason is None:
+                raise RuntimeError("Finished agent state is missing a stop reason.")
             if span is not None:
                 span.set_attribute(
                     "agent.tool_round_count",
@@ -103,12 +99,9 @@ class AgentRunner:
                 )
                 span.set_attribute(
                     "agent.stop_reason",
-                    state.stop_reason.value,
+                    stop_reason.value,
                 )
-                if (
-                    state.stop_reason
-                    is AgentStopReason.MAX_TOOL_ROUNDS
-                ):
+                if stop_reason is AgentStopReason.MAX_TOOL_ROUNDS:
                     span.set_error("MaxToolRoundsExceeded")
             return state
 
@@ -157,25 +150,17 @@ class AgentRunner:
                     )
 
             if not isinstance(response, AgentModelResponse):
-                raise TypeError(
-                    "Agent client response is invalid."
-                )
+                raise TypeError("Agent client response is invalid.")
 
             self._raise_if_cancelled(cancellation)
 
             calls = response.tool_calls
             call_ids = [call.id for call in calls]
 
-            if (
-                len(call_ids) != len(set(call_ids))
-                or any(
-                    call_id in seen_call_ids
-                    for call_id in call_ids
-                )
+            if len(call_ids) != len(set(call_ids)) or any(
+                call_id in seen_call_ids for call_id in call_ids
             ):
-                raise RuntimeError(
-                    "Agent received a duplicate tool call ID."
-                )
+                raise RuntimeError("Agent received a duplicate tool call ID.")
 
             if calls and state.tool_rounds >= self.max_tool_rounds:
                 event = AgentEvent(
@@ -262,9 +247,7 @@ class AgentRunner:
         )
 
         if state.stop_reason is AgentStopReason.MAX_TOOL_ROUNDS:
-            raise RuntimeError(
-                "Maximum agent tool rounds exceeded."
-            )
+            raise RuntimeError("Maximum agent tool rounds exceeded.")
 
         return state.final_text or ""
 

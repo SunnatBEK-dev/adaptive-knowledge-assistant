@@ -24,7 +24,6 @@ from ai_sdk.evaluation.routing import (
     RouteEvaluationRunner,
 )
 
-
 __all__ = [
     "DEFAULT_ROUTE_EVAL_CASES",
     "EvalCase",

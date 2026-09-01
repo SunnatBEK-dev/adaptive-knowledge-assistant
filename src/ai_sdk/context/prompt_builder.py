@@ -1,15 +1,14 @@
 from collections.abc import Sequence
 
-from ai_sdk.core.conversation import Conversation
 from ai_sdk.context.summary import ConversationSummarizer
 from ai_sdk.context.window import SlidingContextWindow
+from ai_sdk.core.conversation import Conversation
 from ai_sdk.llm.types import LLMMessage
 from ai_sdk.memory.model import MemorySearchResult
 from ai_sdk.retrieval.search import SearchResult
 
 
 class PromptBuilder:
-
     def __init__(
         self,
         conversation: Conversation,
@@ -17,9 +16,7 @@ class PromptBuilder:
         summary_memory: ConversationSummarizer | None = None,
     ) -> None:
         if summary_memory is not None and context_window is None:
-            raise ValueError(
-                "Summary memory requires a context window."
-            )
+            raise ValueError("Summary memory requires a context window.")
 
         self.conversation = conversation
         self.context_window = context_window
@@ -27,20 +24,18 @@ class PromptBuilder:
 
     def build_messages(
         self,
-        retrieval_results: Sequence[
-            SearchResult
-        ] = (),
-        memory_results: Sequence[
-            MemorySearchResult
-        ] = (),
+        retrieval_results: Sequence[SearchResult] = (),
+        memory_results: Sequence[MemorySearchResult] = (),
     ) -> list[LLMMessage]:
         messages: list[LLMMessage] = []
 
         for message in self.conversation.history():
-            messages.append({
-                "role": message.role,
-                "content": message.content,
-            })
+            messages.append(
+                {
+                    "role": message.role,
+                    "content": message.content,
+                }
+            )
 
         if retrieval_results:
             self._augment_latest_user_message(
@@ -49,18 +44,11 @@ class PromptBuilder:
             )
 
         if self.context_window is not None:
-            selection = self.context_window.partition(
-                messages
-            )
+            selection = self.context_window.partition(messages)
             messages = selection.included
 
-            if (
-                self.summary_memory is not None
-                and selection.excluded
-            ):
-                summary = self.summary_memory.summarize(
-                    selection.excluded
-                )
+            if self.summary_memory is not None and selection.excluded:
+                summary = self.summary_memory.summarize(selection.excluded)
 
                 if summary:
                     self._augment_latest_user_with_summary(
@@ -79,9 +67,7 @@ class PromptBuilder:
     @staticmethod
     def _augment_latest_user_message(
         messages: list[LLMMessage],
-        retrieval_results: Sequence[
-            SearchResult
-        ],
+        retrieval_results: Sequence[SearchResult],
     ) -> None:
         for message in reversed(messages):
             if message["role"] != "user":
@@ -107,9 +93,7 @@ class PromptBuilder:
             )
             return
 
-        raise RuntimeError(
-            "Retrieval context requires a user message."
-        )
+        raise RuntimeError("Retrieval context requires a user message.")
 
     @staticmethod
     def _augment_latest_user_with_summary(
@@ -130,9 +114,7 @@ class PromptBuilder:
             )
             return
 
-        raise RuntimeError(
-            "Summary memory requires a user message."
-        )
+        raise RuntimeError("Summary memory requires a user message.")
 
     @staticmethod
     def _augment_latest_user_with_memories(
@@ -160,6 +142,4 @@ class PromptBuilder:
             )
             return
 
-        raise RuntimeError(
-            "Long-term memory requires a user message."
-        )
+        raise RuntimeError("Long-term memory requires a user message.")

@@ -11,28 +11,20 @@ class Chunk:
     document_id: str
     content: str
     index: int
-    metadata: dict[str, str] = field(
-        default_factory=dict
-    )
+    metadata: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.id:
             raise ValueError("Chunk ID cannot be empty.")
 
         if not self.document_id:
-            raise ValueError(
-                "Chunk document ID cannot be empty."
-            )
+            raise ValueError("Chunk document ID cannot be empty.")
 
         if not self.content.strip():
-            raise ValueError(
-                "Chunk content cannot be empty."
-            )
+            raise ValueError("Chunk content cannot be empty.")
 
         if self.index < 0:
-            raise ValueError(
-                "Chunk index cannot be negative."
-            )
+            raise ValueError("Chunk index cannot be negative.")
 
         self.metadata = dict(self.metadata)
 

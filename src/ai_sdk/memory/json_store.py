@@ -13,40 +13,42 @@ from ai_sdk.retrieval.chunk import Chunk
 from ai_sdk.retrieval.search import bm25_search
 
 
-class JsonMemoryStore(BaseMemoryStore):
+class JSONMemoryStore(BaseMemoryStore):
     """Persist long-term memories in an atomic local JSON file."""
 
     FORMAT_VERSION = 1
-    COMMON_QUERY_TERMS = frozenset({
-        "a",
-        "an",
-        "and",
-        "are",
-        "be",
-        "bu",
-        "bilan",
-        "da",
-        "do",
-        "does",
-        "ham",
-        "how",
-        "is",
-        "it",
-        "kerak",
-        "men",
-        "menga",
-        "my",
-        "nima",
-        "qanday",
-        "qaysi",
-        "should",
-        "the",
-        "this",
-        "uchun",
-        "va",
-        "what",
-        "which",
-    })
+    COMMON_QUERY_TERMS = frozenset(
+        {
+            "a",
+            "an",
+            "and",
+            "are",
+            "be",
+            "bu",
+            "bilan",
+            "da",
+            "do",
+            "does",
+            "ham",
+            "how",
+            "is",
+            "it",
+            "kerak",
+            "men",
+            "menga",
+            "my",
+            "nima",
+            "qanday",
+            "qaysi",
+            "should",
+            "the",
+            "this",
+            "uchun",
+            "va",
+            "what",
+            "which",
+        }
+    )
 
     def __init__(self, file_path: Path) -> None:
         self.file_path = Path(file_path)
@@ -68,9 +70,7 @@ class JsonMemoryStore(BaseMemoryStore):
 
     def delete(self, memory_id: str) -> bool:
         if not memory_id.strip():
-            raise ValueError(
-                "Long-term memory ID cannot be empty."
-            )
+            raise ValueError("Long-term memory ID cannot be empty.")
 
         if memory_id not in self._memories:
             return False
@@ -92,9 +92,7 @@ class JsonMemoryStore(BaseMemoryStore):
         k: int = 3,
     ) -> list[MemorySearchResult]:
         if not query.strip():
-            raise ValueError(
-                "Memory search query cannot be empty."
-            )
+            raise ValueError("Memory search query cannot be empty.")
 
         normalized_query = self._normalize_query(query)
 
@@ -161,40 +159,28 @@ class JsonMemoryStore(BaseMemoryStore):
             ) as file:
                 payload = json.load(file)
         except (JSONDecodeError, UnicodeDecodeError) as error:
-            raise ValueError(
-                "Memory store file contains invalid JSON."
-            ) from error
+            raise ValueError("Memory store file contains invalid JSON.") from error
 
         try:
             self._restore(payload)
         except (KeyError, TypeError, ValueError) as error:
-            raise ValueError(
-                "Memory store file has an invalid format."
-            ) from error
+            raise ValueError("Memory store file has an invalid format.") from error
 
     def _restore(self, payload: object) -> None:
         if not isinstance(payload, dict):
-            raise ValueError(
-                "Memory store payload must be an object."
-            )
+            raise ValueError("Memory store payload must be an object.")
 
         if payload.get("version") != self.FORMAT_VERSION:
-            raise ValueError(
-                "Memory store version is not supported."
-            )
+            raise ValueError("Memory store version is not supported.")
 
         records = payload.get("memories")
 
         if not isinstance(records, list):
-            raise ValueError(
-                "Memory store records must be a list."
-            )
+            raise ValueError("Memory store records must be a list.")
 
         for record in records:
             if not isinstance(record, dict):
-                raise ValueError(
-                    "Memory store record must be an object."
-                )
+                raise ValueError("Memory store record must be an object.")
 
             memory = LongTermMemory(
                 id=record["id"],
@@ -202,9 +188,7 @@ class JsonMemoryStore(BaseMemoryStore):
             )
 
             if memory.id in self._memories:
-                raise ValueError(
-                    "Long-term memory IDs must be unique."
-                )
+                raise ValueError("Long-term memory IDs must be unique.")
 
             self._memories[memory.id] = memory
 
@@ -244,8 +228,5 @@ class JsonMemoryStore(BaseMemoryStore):
 
             temporary_path.replace(self.file_path)
         finally:
-            if (
-                temporary_path is not None
-                and temporary_path.exists()
-            ):
+            if temporary_path is not None and temporary_path.exists():
                 temporary_path.unlink()

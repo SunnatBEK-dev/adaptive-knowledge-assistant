@@ -56,15 +56,10 @@ class DirectorySynchronizer:
         root = Path(path).expanduser()
 
         if not root.exists():
-            raise FileNotFoundError(
-                "Directory path does not exist: "
-                f"{root}"
-            )
+            raise FileNotFoundError(f"Directory path does not exist: {root}")
 
         if not root.is_dir():
-            raise ValueError(
-                "Directory synchronization requires a directory."
-            )
+            raise ValueError("Directory synchronization requires a directory.")
 
         resolved_root = root.resolve()
         documents = self.ingestor.ingest(
@@ -80,13 +75,9 @@ class DirectorySynchronizer:
             )
         ]
         existing_by_source = {
-            document.source: document
-            for document in existing_documents
+            document.source: document for document in existing_documents
         }
-        current_sources = {
-            document.metadata["source"]
-            for document in documents
-        }
+        current_sources = {document.metadata["source"] for document in documents}
         indexed_documents: list[str] = []
         unchanged_documents: list[str] = []
         removed_document_ids = {
@@ -108,13 +99,8 @@ class DirectorySynchronizer:
             indexed_documents.append(document.id)
             indexed_chunks += len(chunks)
 
-            if (
-                existing is not None
-                and existing.document_id != document.id
-            ):
-                removed_document_ids.add(
-                    existing.document_id
-                )
+            if existing is not None and existing.document_id != document.id:
+                removed_document_ids.add(existing.document_id)
 
         removed_documents = []
 
@@ -135,9 +121,7 @@ class DirectorySynchronizer:
         document: Document,
         existing: IndexedDocument | None,
     ) -> bool:
-        content_hash = document.metadata.get(
-            "content_hash"
-        )
+        content_hash = document.metadata.get("content_hash")
 
         return (
             existing is not None
@@ -152,12 +136,7 @@ class DirectorySynchronizer:
         root: Path,
     ) -> bool:
         if document.ingestion_root is not None:
-            return (
-                Path(document.ingestion_root)
-                .expanduser()
-                .resolve()
-                == root
-            )
+            return Path(document.ingestion_root).expanduser().resolve() == root
 
         source = Path(document.source).expanduser()
 

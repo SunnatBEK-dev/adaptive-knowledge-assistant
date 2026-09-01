@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from enum import Enum
 from threading import Event, Lock
 
-
 _IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")
 
 
@@ -24,7 +23,7 @@ class WorkflowProgressStatus(str, Enum):
 
 @dataclass(frozen=True)
 class WorkflowProgressEvent:
-    """Content-free progress snapshot for one Super AI run."""
+    """Content-free progress snapshot for one Adaptive Multi-Model run."""
 
     sequence: int
     status: WorkflowProgressStatus
@@ -51,12 +50,8 @@ class WorkflowProgressEvent:
             WorkflowProgressStatus.STAGE_FAILED,
             WorkflowProgressStatus.STAGE_BLOCKED,
         }
-        if (self.status in stage_statuses) != (
-            self.stage_id is not None
-        ):
-            raise ValueError(
-                "Progress stage ID is inconsistent with its status."
-            )
+        if (self.status in stage_statuses) != (self.stage_id is not None):
+            raise ValueError("Progress stage ID is inconsistent with its status.")
         if (
             not isinstance(self.completed_stage_count, int)
             or isinstance(self.completed_stage_count, bool)
@@ -70,10 +65,7 @@ class WorkflowProgressEvent:
 
     @staticmethod
     def _validate_identifier(value: object, label: str) -> None:
-        if (
-            not isinstance(value, str)
-            or _IDENTIFIER_PATTERN.fullmatch(value) is None
-        ):
+        if not isinstance(value, str) or _IDENTIFIER_PATTERN.fullmatch(value) is None:
             raise ValueError(f"Progress {label} is invalid.")
 
     def to_dict(self) -> dict[str, object]:
@@ -125,7 +117,7 @@ class WorkflowCancelledError(RuntimeError):
     """Raised at a safe workflow boundary after cancellation."""
 
     def __init__(self, partial_result: object | None = None) -> None:
-        super().__init__("Super AI workflow was cancelled.")
+        super().__init__("Adaptive Multi-Model workflow was cancelled.")
         self.partial_result = partial_result
 
 

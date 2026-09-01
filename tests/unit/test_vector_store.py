@@ -50,10 +50,13 @@ def test_store_replaces_existing_chunk_without_growing():
     store.add(replacement, [0.0, 1.0])
 
     assert store.count() == 1
-    assert store.search(
-        [0.0, 1.0],
-        k=1,
-    )[0].chunk is replacement
+    assert (
+        store.search(
+            [0.0, 1.0],
+            k=1,
+        )[0].chunk
+        is replacement
+    )
 
 
 def test_store_searches_indexed_chunks_lexically():
@@ -70,10 +73,12 @@ def test_store_searches_indexed_chunks_lexically():
         content="General deployment guide",
         index=1,
     )
-    store.add_many([
-        (generic, [1.0, 0.0]),
-        (exact, [0.0, 1.0]),
-    ])
+    store.add_many(
+        [
+            (generic, [1.0, 0.0]),
+            (exact, [0.0, 1.0]),
+        ]
+    )
 
     results = store.lexical_search("ZX-81", k=1)
 
@@ -134,11 +139,13 @@ def test_store_replaces_and_deletes_document_chunks():
         "chunk_replacement",
         document_id="doc_replace",
     )
-    store.add_many([
-        (old_first, [1.0, 0.0]),
-        (old_second, [0.8, 0.2]),
-        (other, [0.0, 1.0]),
-    ])
+    store.add_many(
+        [
+            (old_first, [1.0, 0.0]),
+            (old_second, [0.8, 0.2]),
+            (other, [0.0, 1.0]),
+        ]
+    )
 
     store.replace_document(
         "doc_replace",
@@ -176,21 +183,25 @@ def test_store_rolls_back_invalid_document_replacement():
         "chunk_other",
         document_id="doc_other",
     )
-    store.add_many([
-        (original, [1.0, 0.0]),
-        (other, [0.0, 1.0]),
-    ])
+    store.add_many(
+        [
+            (original, [1.0, 0.0]),
+            (other, [0.0, 1.0]),
+        ]
+    )
 
     with pytest.raises(ValueError, match="dimension"):
         store.replace_document(
             "doc_replace",
-            [(
-                make_chunk(
-                    "chunk_invalid",
-                    document_id="doc_replace",
-                ),
-                [1.0, 0.0, 0.0],
-            )],
+            [
+                (
+                    make_chunk(
+                        "chunk_invalid",
+                        document_id="doc_replace",
+                    ),
+                    [1.0, 0.0, 0.0],
+                )
+            ],
         )
 
     with pytest.raises(ValueError, match="belong"):
@@ -200,7 +211,10 @@ def test_store_rolls_back_invalid_document_replacement():
         )
 
     assert store.count() == 2
-    assert store.search(
-        [1.0, 0.0],
-        k=1,
-    )[0].chunk is original
+    assert (
+        store.search(
+            [1.0, 0.0],
+            k=1,
+        )[0].chunk
+        is original
+    )

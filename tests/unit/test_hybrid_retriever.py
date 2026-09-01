@@ -16,12 +16,14 @@ class MappingEmbeddingClient(BaseEmbeddingClient):
 
 def make_retriever():
     return HybridRetriever(
-        embedding_client=MappingEmbeddingClient({
-            "Semantic candidate": [1.0, 0.0],
-            "Exact error ZX-81": [0.0, 1.0],
-            "ZX-81 help": [1.0, 0.0],
-            "semantic question": [1.0, 0.0],
-        }),
+        embedding_client=MappingEmbeddingClient(
+            {
+                "Semantic candidate": [1.0, 0.0],
+                "Exact error ZX-81": [0.0, 1.0],
+                "ZX-81 help": [1.0, 0.0],
+                "semantic question": [1.0, 0.0],
+            }
+        ),
         vector_store=InMemoryVectorStore(),
     )
 

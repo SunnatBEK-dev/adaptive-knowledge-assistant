@@ -12,7 +12,6 @@ from ai_sdk.retrieval.retriever import (
     SemanticRetriever,
 )
 
-
 pytestmark = pytest.mark.integration
 
 
@@ -54,25 +53,12 @@ def test_document_to_semantic_result_workflow():
         k=1,
     )
     conversation = Conversation()
-    conversation.add_user(
-        "How do Python functions work?"
-    )
-    messages = PromptBuilder(
-        conversation
-    ).build_messages(
-        retrieval_results=results
-    )
+    conversation.add_user("How do Python functions work?")
+    messages = PromptBuilder(conversation).build_messages(retrieval_results=results)
 
     assert len(chunks) == 2
     assert results[0].chunk.content == "Python functions"
-    assert results[0].chunk.metadata == {
-        "source": "guide.txt"
-    }
+    assert results[0].chunk.metadata == {"source": "guide.txt"}
     assert "Python functions" in messages[-1]["content"]
-    assert (
-        "How do Python functions work?"
-        in messages[-1]["content"]
-    )
-    assert conversation.last_message().content == (
-        "How do Python functions work?"
-    )
+    assert "How do Python functions work?" in messages[-1]["content"]
+    assert conversation.last_message().content == ("How do Python functions work?")

@@ -14,8 +14,8 @@ from ai_sdk.llm.base import BaseToolLLMClient
 from ai_sdk.llm.retry import RetryPolicy
 from ai_sdk.observability import (
     InMemoryTraceCollector,
-    TraceStatus,
     Tracer,
+    TraceStatus,
 )
 from ai_sdk.tools import (
     ToolCall,
@@ -67,14 +67,16 @@ def build_executor(handler=lambda value: value * 2):
 
 
 def tool_response(call_id, value):
-    return AgentModelResponse([
-        AgentTextBlock("Calculating."),
-        ToolCall(
-            id=call_id,
-            name="double",
-            arguments={"value": value},
-        ),
-    ])
+    return AgentModelResponse(
+        [
+            AgentTextBlock("Calculating."),
+            ToolCall(
+                id=call_id,
+                name="double",
+                arguments={"value": value},
+            ),
+        ]
+    )
 
 
 def final_response(text="Final answer"):
@@ -83,11 +85,13 @@ def final_response(text="Final answer"):
 
 def test_agent_response_preserves_block_order_and_views():
     call = ToolCall("call_1", "double", {"value": 2})
-    response = AgentModelResponse([
-        AgentTextBlock("Before "),
-        call,
-        AgentTextBlock("after."),
-    ])
+    response = AgentModelResponse(
+        [
+            AgentTextBlock("Before "),
+            call,
+            AgentTextBlock("after."),
+        ]
+    )
 
     assert response.blocks == (
         AgentTextBlock("Before "),
@@ -163,35 +167,37 @@ def test_runner_returns_final_state_and_emits_event():
 
 def test_runner_executes_tool_and_passes_event_to_next_turn():
     executions = []
-    client = ScriptedAgentClient([
-        tool_response("call_1", 3),
-        final_response("Six"),
-    ])
-    executor = build_executor(
-        lambda value: executions.append(value) or value * 2
+    client = ScriptedAgentClient(
+        [
+            tool_response("call_1", 3),
+            final_response("Six"),
+        ]
     )
+    executor = build_executor(lambda value: executions.append(value) or value * 2)
 
-    state = AgentRunner(client, executor).run([
-        {"role": "user", "content": "Double three."},
-    ])
+    state = AgentRunner(client, executor).run(
+        [
+            {"role": "user", "content": "Double three."},
+        ]
+    )
 
     assert state.stop_reason is AgentStopReason.FINAL_RESPONSE
     assert state.final_text == "Six"
     assert state.tool_rounds == 1
     assert executions == [3]
-    assert state.events[0].tool_results == (
-        ToolResult("call_1", "double", "6"),
-    )
+    assert state.events[0].tool_results == (ToolResult("call_1", "double", "6"),)
     assert client.turns[1][2] == (state.events[0],)
 
 
 def test_runner_traces_nested_model_and_tool_operations():
     collector = InMemoryTraceCollector()
     tracer = Tracer(collector)
-    client = ScriptedAgentClient([
-        tool_response("call_1", 3),
-        final_response("Six"),
-    ])
+    client = ScriptedAgentClient(
+        [
+            tool_response("call_1", 3),
+            final_response("Six"),
+        ]
+    )
 
     state = AgentRunner(
         client,
@@ -201,15 +207,9 @@ def test_runner_traces_nested_model_and_tool_operations():
 
     records = collector.records()
     root = next(record for record in records if record.name == "agent.run")
-    children = [
-        record
-        for record in records
-        if record.parent_span_id == root.span_id
-    ]
+    children = [record for record in records if record.parent_span_id == root.span_id]
     assert state.final_text == "Six"
-    assert [record.name for record in records].count(
-        "llm.tool_turn"
-    ) == 2
+    assert [record.name for record in records].count("llm.tool_turn") == 2
     assert all(
         record.attributes["llm.request_attempt_count"] == 1
         for record in records
@@ -220,21 +220,19 @@ def test_runner_traces_nested_model_and_tool_operations():
     assert root.attributes["agent.tool_round_count"] == 1
     assert root.attributes["agent.stop_reason"] == "final_response"
     assert root.status is TraceStatus.OK
-    assert "private prompt" not in str(
-        [record.to_dict() for record in records]
-    )
+    assert "private prompt" not in str([record.to_dict() for record in records])
 
 
 def test_runner_returns_explicit_max_round_stop_without_extra_execution():
     executions = []
     collector = InMemoryTraceCollector()
-    client = ScriptedAgentClient([
-        tool_response("call_1", 1),
-        tool_response("call_2", 2),
-    ])
-    executor = build_executor(
-        lambda value: executions.append(value) or value * 2
+    client = ScriptedAgentClient(
+        [
+            tool_response("call_1", 1),
+            tool_response("call_2", 2),
+        ]
     )
+    executor = build_executor(lambda value: executions.append(value) or value * 2)
 
     state = AgentRunner(
         client,
@@ -248,20 +246,18 @@ def test_runner_returns_explicit_max_round_stop_without_extra_execution():
     assert len(state.events) == 2
     assert state.events[-1].tool_results == ()
     assert executions == [1]
-    root = next(
-        record
-        for record in collector.records()
-        if record.name == "agent.run"
-    )
+    root = next(record for record in collector.records() if record.name == "agent.run")
     assert root.status is TraceStatus.ERROR
     assert root.error_type == "MaxToolRoundsExceeded"
 
 
 def test_runner_ask_raises_when_max_rounds_are_reached():
-    client = ScriptedAgentClient([
-        tool_response("call_1", 1),
-        tool_response("call_2", 2),
-    ])
+    client = ScriptedAgentClient(
+        [
+            tool_response("call_1", 1),
+            tool_response("call_2", 2),
+        ]
+    )
     runner = AgentRunner(
         client,
         build_executor(),
@@ -269,9 +265,11 @@ def test_runner_ask_raises_when_max_rounds_are_reached():
     )
 
     with pytest.raises(RuntimeError, match="rounds exceeded"):
-        runner.ask([
-            {"role": "user", "content": "Keep going."},
-        ])
+        runner.ask(
+            [
+                {"role": "user", "content": "Keep going."},
+            ]
+        )
 
 
 def test_runner_retries_transient_failures_before_state_mutation():
@@ -279,19 +277,19 @@ def test_runner_retries_transient_failures_before_state_mutation():
         status_code = 503
 
     collector = InMemoryTraceCollector()
-    client = ScriptedAgentClient([
-        TemporaryError("private one"),
-        TimeoutError("private two"),
-        tool_response("call_1", 3),
-        final_response("Recovered"),
-    ])
+    client = ScriptedAgentClient(
+        [
+            TemporaryError("private one"),
+            TimeoutError("private two"),
+            tool_response("call_1", 3),
+            final_response("Recovered"),
+        ]
+    )
     delays = []
     executions = []
     runner = AgentRunner(
         client,
-        build_executor(
-            lambda value: executions.append(value) or value * 2
-        ),
+        build_executor(lambda value: executions.append(value) or value * 2),
         retry_policy=RetryPolicy(
             max_attempts=3,
             initial_delay_seconds=0.25,
@@ -312,21 +310,20 @@ def test_runner_retries_transient_failures_before_state_mutation():
     assert client.turns[3][2] == (state.events[0],)
     assert delays == [0.25, 0.5]
     model_records = [
-        record
-        for record in collector.records()
-        if record.name == "llm.tool_turn"
+        record for record in collector.records() if record.name == "llm.tool_turn"
     ]
     assert [
-        record.attributes["llm.request_attempt_count"]
-        for record in model_records
+        record.attributes["llm.request_attempt_count"] for record in model_records
     ] == [3, 1]
 
 
 def test_runner_does_not_retry_permanent_or_exhausted_failures():
-    permanent = ScriptedAgentClient([
-        RuntimeError("invalid request"),
-        final_response(),
-    ])
+    permanent = ScriptedAgentClient(
+        [
+            RuntimeError("invalid request"),
+            final_response(),
+        ]
+    )
     permanent_delays = []
     permanent_runner = AgentRunner(
         permanent,
@@ -336,16 +333,20 @@ def test_runner_does_not_retry_permanent_or_exhausted_failures():
     )
 
     with pytest.raises(RuntimeError, match="invalid request"):
-        permanent_runner.run([
-            {"role": "user", "content": "Question"},
-        ])
+        permanent_runner.run(
+            [
+                {"role": "user", "content": "Question"},
+            ]
+        )
     assert len(permanent.turns) == 1
     assert permanent_delays == []
 
-    exhausted = ScriptedAgentClient([
-        TimeoutError("one"),
-        TimeoutError("two"),
-    ])
+    exhausted = ScriptedAgentClient(
+        [
+            TimeoutError("one"),
+            TimeoutError("two"),
+        ]
+    )
     exhausted_delays = []
     exhausted_runner = AgentRunner(
         exhausted,
@@ -358,9 +359,11 @@ def test_runner_does_not_retry_permanent_or_exhausted_failures():
         sleep=exhausted_delays.append,
     )
     with pytest.raises(TimeoutError, match="two"):
-        exhausted_runner.run([
-            {"role": "user", "content": "Question"},
-        ])
+        exhausted_runner.run(
+            [
+                {"role": "user", "content": "Question"},
+            ]
+        )
     assert len(exhausted.turns) == 2
     assert exhausted_delays == [0]
 
@@ -384,10 +387,12 @@ def test_cancellation_stops_before_request_and_before_retry():
             return True
 
     retry_token = CancellingToken()
-    transient = ScriptedAgentClient([
-        TimeoutError("temporary"),
-        final_response(),
-    ])
+    transient = ScriptedAgentClient(
+        [
+            TimeoutError("temporary"),
+            final_response(),
+        ]
+    )
     retry_runner = AgentRunner(
         transient,
         build_executor(),
@@ -406,10 +411,12 @@ def test_cancellation_stops_before_request_and_before_retry():
     "responses",
     [
         [
-            AgentModelResponse([
-                ToolCall("same", "double", {"value": 1}),
-                ToolCall("same", "double", {"value": 2}),
-            ]),
+            AgentModelResponse(
+                [
+                    ToolCall("same", "double", {"value": 1}),
+                    ToolCall("same", "double", {"value": 2}),
+                ]
+            ),
         ],
         [
             tool_response("same", 1),

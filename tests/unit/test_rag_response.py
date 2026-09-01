@@ -8,11 +8,13 @@ from ai_sdk.retrieval.chunk import Chunk
 from ai_sdk.retrieval.search import SearchResult
 
 
-def make_result(source=None):
+def make_result(source=None, page=None):
     metadata = {}
 
     if source is not None:
         metadata["source"] = source
+    if page is not None:
+        metadata["page"] = page
 
     return SearchResult(
         chunk=Chunk(
@@ -59,4 +61,23 @@ def test_citation_rejects_non_positive_position():
         Citation.from_search_result(
             0,
             make_result(),
+        )
+
+
+def test_citation_preserves_pdf_page_number():
+    citation = Citation.from_search_result(
+        1,
+        make_result("guide.pdf", "7"),
+    )
+
+    assert citation.page == 7
+
+    with pytest.raises(ValueError, match="page"):
+        Citation(
+            position=1,
+            document_id="doc",
+            chunk_id="chunk",
+            source="guide.pdf",
+            score=1.0,
+            page=0,
         )

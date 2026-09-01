@@ -76,9 +76,7 @@ def test_build_messages_augments_latest_user_with_ordered_context():
         ),
     ]
 
-    messages = PromptBuilder(conversation).build_messages(
-        retrieval_results=results
-    )
+    messages = PromptBuilder(conversation).build_messages(retrieval_results=results)
 
     assert messages[-1] == {
         "role": "user",
@@ -112,9 +110,7 @@ def test_retrieval_context_requires_user_message():
     )
 
     with pytest.raises(RuntimeError, match="user message"):
-        PromptBuilder(conversation).build_messages(
-            retrieval_results=[result]
-        )
+        PromptBuilder(conversation).build_messages(retrieval_results=[result])
 
 
 def test_build_messages_applies_context_window_after_retrieval():
@@ -136,9 +132,7 @@ def test_build_messages_applies_context_window_after_retrieval():
         ),
     )
 
-    messages = builder.build_messages(
-        retrieval_results=[result]
-    )
+    messages = builder.build_messages(retrieval_results=[result])
 
     assert len(messages) == 1
     assert messages[0]["role"] == "user"
@@ -158,9 +152,7 @@ def test_build_messages_injects_summary_of_excluded_turns():
             max_tokens=2,
             message_overhead=0,
         ),
-        summary_memory=ExtractiveConversationSummarizer(
-            max_tokens=8
-        ),
+        summary_memory=ExtractiveConversationSummarizer(max_tokens=8),
     )
 
     messages = builder.build_messages()
@@ -177,9 +169,7 @@ def test_summary_memory_requires_context_window():
     with pytest.raises(ValueError, match="context window"):
         PromptBuilder(
             conversation,
-            summary_memory=ExtractiveConversationSummarizer(
-                max_tokens=10
-            ),
+            summary_memory=ExtractiveConversationSummarizer(max_tokens=10),
         )
 
 
@@ -195,11 +185,7 @@ def test_build_messages_injects_relevant_long_term_memory():
         memory_results=[MemorySearchResult(memory, 1.0)]
     )
 
-    assert "[M1] Preferred language is Uzbek" in (
-        messages[-1]["content"]
-    )
-    assert "Which language should I use?" in (
-        messages[-1]["content"]
-    )
+    assert "[M1] Preferred language is Uzbek" in (messages[-1]["content"])
+    assert "Which language should I use?" in (messages[-1]["content"])
     assert "mem_language" not in messages[-1]["content"]
     assert "1.0" not in messages[-1]["content"]

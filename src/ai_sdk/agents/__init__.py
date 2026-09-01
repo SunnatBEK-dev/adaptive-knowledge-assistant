@@ -8,13 +8,6 @@ from ai_sdk.agents.coordination import (
     MultiAgentCoordinator,
     create_provider_worker,
 )
-from ai_sdk.agents.model import (
-    AgentEvent,
-    AgentModelResponse,
-    AgentResponseBlock,
-    AgentStopReason,
-    AgentTextBlock,
-)
 from ai_sdk.agents.handoff import (
     DependencyHandoffCoordinator,
     DependencyHandoffResult,
@@ -24,6 +17,13 @@ from ai_sdk.agents.handoff import (
     HandoffStage,
     HandoffStageResult,
     SequentialHandoffCoordinator,
+)
+from ai_sdk.agents.model import (
+    AgentEvent,
+    AgentModelResponse,
+    AgentResponseBlock,
+    AgentStopReason,
+    AgentTextBlock,
 )
 from ai_sdk.agents.plan import (
     AgentPlan,
@@ -53,16 +53,15 @@ from ai_sdk.agents.reflection import (
 from ai_sdk.agents.routing import (
     AICapability,
     CapabilityRouter,
+    MultiModelRoute,
     RoutingDecision,
     RoutingSignal,
-    SuperAIRoute,
 )
 from ai_sdk.agents.runner import (
     AgentEventHandler,
     AgentRunner,
 )
 from ai_sdk.agents.state import AgentState
-
 
 __all__ = [
     "AICapability",
@@ -105,7 +104,7 @@ __all__ = [
     "RoutingDecision",
     "RoutingSignal",
     "SequentialHandoffCoordinator",
-    "SuperAIRoute",
+    "MultiModelRoute",
     "WorkflowCancelledError",
     "WorkflowProgressEvent",
     "WorkflowProgressHandler",
